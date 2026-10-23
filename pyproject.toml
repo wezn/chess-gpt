@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 chess-monitor = "chessgpt.monitor:main"
+chess-play = "chessgpt.play:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

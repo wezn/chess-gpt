@@ -145,3 +145,39 @@ class ModelPlayer:
                 if attempts[i] >= max_attempts:
                     results[i] = MoveChoice(None, "illegal", attempts[i], first_output[i])
         return results
+
+    def move_tokens(self, board: chess.Board, move: chess.Move) -> list[int]:
+        """The tokens the model would write for `move` in this position."""
+        tok = self.tokenizer
+        if tok.name == "uci-move":
+            return [tok.stoi[move.uci()]]
+        if tok.name == "uci-square":
+            uci = move.uci()
+            return [tok.stoi[uci[:2]], tok.stoi[uci[2:4]]] + ([tok.stoi[uci[4]]] if len(uci) == 5 else [])
+        return [tok.stoi[c] for c in board.san(move) + " "]
+
+    @torch.no_grad()
+    def rank_legal_moves(self, board: chess.Board) -> list[tuple[chess.Move, float]] | None:
+        """Every legal move with the model's probability for it, best first (None if the game is past the context).
+
+        A move's probability is the product of its tokens' probabilities, so multi-token
+        moves (pgn-char, uci-square) are scored fairly. Probabilities are renormalised over
+        the legal moves.
+        """
+        prompt = prompt_ids(self.tokenizer, board)
+        moves = list(board.legal_moves)
+        seqs = [prompt + self.move_tokens(board, m) for m in moves]
+        if not moves or max(map(len, seqs)) > self.block_size:
+            return None
+        x = torch.full((len(seqs), max(map(len, seqs))), PAD, dtype=torch.long)
+        for r, s in enumerate(seqs):
+            x[r, : len(s)] = torch.tensor(s)
+        x = x.to(self.device)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            logp = torch.log_softmax(self.model(x).float(), -1)
+        scores = []
+        for r, s in enumerate(seqs):
+            positions = torch.arange(len(prompt) - 1, len(s) - 1, device=self.device)
+            scores.append(logp[r, positions, x[r, positions + 1]].sum())
+        probs = torch.softmax(torch.stack(scores), 0).tolist()
+        return sorted(zip(moves, probs), key=lambda mp: -mp[1])
