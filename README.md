@@ -20,11 +20,12 @@ the same number of training tokens and the same eval suite.
 configs/data/         how each dataset is built (one file = one immutable dataset)
 configs/model/        model sizes
 configs/experiments/  dataset + model + training hyperparameters
-src/chessgpt/data/    dataset builders
+src/chessgpt/data/    dataset builders and pre-tokenization
+src/chessgpt/tokenizers.py  pgn-char, uci-move, uci-square
 tests/
 notebooks/            analysis only
 results/              small summaries and plots (committed)
-data/                 datasets (gitignored, regenerable from configs)
+data/                 datasets and tokenized datasets (gitignored, regenerable)
 runs/                 checkpoints and metrics (gitignored)
 ```
 
@@ -44,7 +45,23 @@ uv run python -m chessgpt.data.lichess configs/data/lichess-smoke.yaml
 # full dataset 1: 5M rapid+ games, all ratings
 # optional: --max-mbps N caps download bandwidth (megabits/s)
 uv run python -m chessgpt.data.lichess configs/data/lichess-2026-09-rapid.yaml
+
+# tokenize a dataset once per tokenizer -> data/tokenized/<dataset>__<tokenizer>/
+uv run python -m chessgpt.data.pretokenize lichess-2026-09-rapid uci-move
 ```
+
+## Tokenizers
+
+| Tokenizer | Token | Vocab | Tokens/move |
+|-----------|-------|-------|-------------|
+| `pgn-char` (A) | one character of `1.e4 e5 2.Nf3` | 34 | ~5.5 |
+| `uci-move` (B) | one move, `g1f3` | 1971 | 1 |
+| `uci-square` (C) | one square (+ promotion piece), `g1` `f3` | 71 | ~2 |
+
+All share `<pad>`, `<bos>`, `<eos>`. The validation split (1%) is picked by hashing
+game IDs, so it is the same games for every tokenizer.
+
+See `TODO.md` for planned work.
 
 PyTorch is installed from the CUDA 13.0 wheel index (see `pyproject.toml`) for the GB10 GPU.
 
