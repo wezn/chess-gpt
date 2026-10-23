@@ -11,8 +11,7 @@ train:
   betas: [0.9, 0.95]
   grad_clip: 1.0
   log_every: 50
-  eval_every: 1000                  # also when last.pt / best.pt are saved
   eval_games: 2000
-  snapshots: [0.1, 0.25, 0.5]       # permanent checkpoints at these fractions of training
+  checkpoint_every: 0.02            # val loss + last.pt + best.pt + permanent snapshot every 2% of training
   compile: true
   seed: 1337

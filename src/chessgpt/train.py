@@ -6,9 +6,12 @@
 Each run writes runs/<experiment>/<timestamp>/:
     config.yaml     fully resolved config (experiment + model size + git commit)
     metrics.jsonl   one JSON line per log/eval step
-    last.pt         latest checkpoint (overwritten at every eval), used by --resume
-    best.pt         checkpoint with the lowest validation loss so far
-    step-NNNNNN.pt  permanent snapshots at the fractions listed in `train.snapshots`
+    last.pt         latest checkpoint incl. optimizer state, used by --resume (overwritten)
+    best.pt         checkpoint with the lowest validation loss so far (overwritten)
+    snapshots/step-NNNNNN.pt  permanent model-only snapshots, for evaluating progress
+
+All three are written every `train.checkpoint_every` of training (e.g. 0.02 = every
+2%), so snapshots line up at the same number of games seen whatever the tokenizer.
 """
 
 import argparse
@@ -107,12 +110,9 @@ def prefetch(fn, items, depth: int = 4):
         yield result
 
 
-def save_checkpoint(path: Path, model: GPT, optimizer, step: int, best_val: float, cfg: dict) -> None:
+def save_checkpoint(path: Path, state: dict) -> None:
     tmp = path.with_suffix(".tmp")
-    torch.save(
-        {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "step": step, "best_val": best_val, "config": cfg},
-        tmp,
-    )
+    torch.save(state, tmp)
     os.replace(tmp, path)  # atomic: a crash mid-save never leaves a corrupt checkpoint
 
 
@@ -130,7 +130,10 @@ def train(cfg: dict, run_dir: Path, resume: bool = False, max_steps: int | None 
     total_steps = sum(p.num_batches for p in plans)
     if max_steps:
         total_steps = min(total_steps, max_steps)
-    snapshot_steps = {int(f * total_steps) for f in t.get("snapshots", [])}
+    every = t["checkpoint_every"]
+    checkpoint_steps = {round(k * every * total_steps) for k in range(1, math.ceil(1 / every) + 1)} | {total_steps}
+    checkpoint_steps.discard(0)
+    (run_dir / "snapshots").mkdir(exist_ok=True)
 
     model = GPT(GPTConfig(vocab_size=train_split.meta["vocab_size"], block_size=block, **{k: v for k, v in cfg["model"].items() if k != "name"})).to(device)
     optimizer = model.configure_optimizer(t["lr"], t["weight_decay"], tuple(t["betas"]))
@@ -170,10 +173,12 @@ def train(cfg: dict, run_dir: Path, resume: bool = False, max_steps: int | None 
         result = validator(compiled, device)
         log({"type": "eval", "step": s, **result})
         print(f"step {s:,}  val loss/move {result['val_loss_move']:.4f}  val loss/token {result['val_loss_token']:.4f}", file=sys.stderr)
-        save_checkpoint(run_dir / "last.pt", model, optimizer, s, best_val, cfg)
-        if result["val_loss_move"] < best_val:
-            best_val = result["val_loss_move"]
-            save_checkpoint(run_dir / "best.pt", model, optimizer, s, best_val, cfg)
+        best_val = min(best_val, result["val_loss_move"])
+        snapshot = {"model": model.state_dict(), "step": s, "progress": s / total_steps, "val_loss_move": result["val_loss_move"], "config": cfg}
+        save_checkpoint(run_dir / "snapshots" / f"step-{s:06d}.pt", snapshot)
+        save_checkpoint(run_dir / "last.pt", {**snapshot, "optimizer": optimizer.state_dict(), "best_val": best_val})
+        if best_val == result["val_loss_move"]:
+            save_checkpoint(run_dir / "best.pt", snapshot)
 
     train_start = window_start = time.monotonic()
     window_tokens = window_targets = 0
@@ -205,10 +210,8 @@ def train(cfg: dict, run_dir: Path, resume: bool = False, max_steps: int | None 
                 file=sys.stderr,
             )
             window_start, window_tokens, window_targets = time.monotonic(), 0, 0
-        if (s + 1) % t["eval_every"] == 0 or s + 1 == total_steps:
+        if s + 1 in checkpoint_steps:
             evaluate_and_checkpoint(s + 1)
-        if s + 1 in snapshot_steps:
-            save_checkpoint(run_dir / f"step-{s + 1:06d}.pt", model, optimizer, s + 1, best_val, cfg)
     metrics.close()
 
 
