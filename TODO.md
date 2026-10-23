@@ -3,7 +3,8 @@
 ## Now: basic models
 - [x] Dataset 1: 5M Lichess rapid+ games (`lichess-2026-09-rapid`)
 - [x] Tokenizers A/B/C: `pgn-char`, `uci-move`, `uci-square`
-- [ ] Model + training loop
+- [x] Model + training loop
+- [ ] Full tiny runs (A, B, C) + time estimates for every size
 - [ ] Eval suite (legal-move rate, puzzles, vs Stockfish)
 - [ ] Experiments: one model per tokenizer (A, B, C), compared at equal compute, loss reported per move
 

@@ -22,6 +22,9 @@ configs/model/        model sizes
 configs/experiments/  dataset + model + training hyperparameters
 src/chessgpt/data/    dataset builders and pre-tokenization
 src/chessgpt/tokenizers.py  pgn-char, uci-move, uci-square
+src/chessgpt/model.py       the GPT
+src/chessgpt/batches.py     packing whole games into training rows
+src/chessgpt/train.py       training loop
 tests/
 notebooks/            analysis only
 results/              small summaries and plots (committed)
@@ -60,6 +63,22 @@ uv run python -m chessgpt.data.pretokenize lichess-2026-09-rapid uci-move
 
 All share `<pad>`, `<bos>`, `<eos>`. The validation split (1%) is picked by hashing
 game IDs, so it is the same games for every tokenizer.
+
+## Training
+
+```bash
+uv run python -m chessgpt.train configs/experiments/tiny-uci-move.yaml
+uv run python -m chessgpt.train --resume runs/tiny-uci-move/<timestamp>
+```
+
+Experiments are named `<size>-<tokenizer>` (sizes in `configs/model/`: tiny, small,
+medium, large). Each training row packs several whole games; an attention mask
+keeps games from seeing each other, so each game is scored exactly as if alone.
+Validation loss is reported per move, which is comparable across tokenizers.
+
+Checkpoints in `runs/<experiment>/<timestamp>/`: `last.pt` and `best.pt` are
+written at every eval (`eval_every` steps), and permanent snapshots at 10%, 25%
+and 50% of training.
 
 See `TODO.md` for planned work.
 
