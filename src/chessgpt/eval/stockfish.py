@@ -74,7 +74,8 @@ def move_accuracy(cp_before: float, cp_after: float) -> float:
 class MoveScore:
     ply: int  # 0 = White's first move
     accuracy: float
-    cp_loss: float
+    cp_loss: float  # centipawns lost, evaluations capped at +-CP_CAP
+    win_loss: float  # win probability lost, in percentage points
 
 
 def _clamp(cp: float) -> float:
@@ -88,7 +89,8 @@ def score_game(evals: Sequence[int], first_ply: int = 0) -> list[MoveScore]:
         sign = 1 if ply % 2 == 0 else -1
         before, after = sign * evals[ply], sign * evals[ply + 1]
         cp_loss = max(0, _clamp(before) - _clamp(after))
-        scores.append(MoveScore(ply, move_accuracy(before, after), cp_loss))
+        win_loss = max(0.0, win_percent(before) - win_percent(after))
+        scores.append(MoveScore(ply, move_accuracy(before, after), cp_loss, win_loss))
     return scores
 
 

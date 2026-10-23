@@ -68,7 +68,8 @@ def evaluate(snapshot: Path, run_dir: Path, legality_set: list[dict], openings: 
         "selfplay_accuracy": quality["accuracy"],
         "selfplay_acpl": quality["acpl"],
         "selfplay_scored_moves": quality["moves"],
-        **calibration.estimate(quality["accuracy"]),
+        "selfplay_win_loss": quality["win_loss"],
+        **calibration.estimate(quality),
         "eval_seconds": round(time.monotonic() - start),
     }
 
