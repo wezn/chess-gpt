@@ -1,0 +1,12 @@
+# Tiny dataset to check the pipeline end to end (~1 minute).
+name: lichess-smoke
+source:
+  month: "2026-09"        # or `path: /local/file.pgn.zst`
+max_games: 10000
+filters:
+  min_elo: 0              # both players
+  max_elo: null
+  speeds: [rapid, classical, correspondence]
+  terminations: [Normal, Time forfeit]
+  min_plies: 20
+  exclude_bots: true      # bot games belong in the engine dataset

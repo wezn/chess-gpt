@@ -1,0 +1,12 @@
+# Dataset 1: human games. Rapid and slower, all ratings, first 5M games of the month.
+name: lichess-2026-09-rapid
+source:
+  month: "2026-09"
+max_games: 5000000
+filters:
+  min_elo: 0
+  max_elo: null
+  speeds: [rapid, classical, correspondence]
+  terminations: [Normal, Time forfeit]
+  min_plies: 20
+  exclude_bots: true      # bot games belong in the engine dataset

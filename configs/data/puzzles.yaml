@@ -1,0 +1,11 @@
+# Dataset 2: tactics. NOT IMPLEMENTED YET (src/chessgpt/data/puzzles.py).
+# Plan: take the Lichess puzzle CSV, find each puzzle's source game in the monthly
+# dumps by game ID, and store "game moves up to the puzzle + solution" so the format
+# matches the other datasets.
+name: puzzles
+source:
+  url: https://database.lichess.org/lichess_db_puzzle.csv.zst
+filters:
+  min_rating: 0
+  max_rating: null
+  min_popularity: 80

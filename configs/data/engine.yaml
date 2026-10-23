@@ -1,0 +1,10 @@
+# Dataset 3: engine vs engine. NOT IMPLEMENTED YET (src/chessgpt/data/engine.py).
+# Plan: Stockfish self-play on this machine, starting from varied openings to avoid
+# replaying the same lines, or import CCRL/TCEC PGNs.
+name: engine-stockfish
+source:
+  type: selfplay          # or: pgn
+engine:
+  nodes_per_move: 100000
+  opening_random_plies: 8
+num_games: 1000000
