@@ -1,0 +1,18 @@
+name: large-uci-square
+data: lichess-2026-09-rapid__uci-square    # data/tokenized/<dataset>__<tokenizer>
+model: large                       # configs/model/large.yaml
+block_size: 384                      # ~190 moves for every tokenizer, covers ~99% of games
+train:
+  epochs: 1
+  batch_tokens: 65536               # rows per batch = batch_tokens / block_size
+  warmup_steps: 200
+  min_lr_ratio: 0.1
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  grad_clip: 1.0
+  log_every: 50
+  eval_every: 1000                  # also when last.pt / best.pt are saved
+  eval_games: 2000
+  snapshots: [0.1, 0.25, 0.5]       # permanent checkpoints at these fractions of training
+  compile: true
+  seed: 1337

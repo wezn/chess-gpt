@@ -1,0 +1,5 @@
+n_layer: 8
+n_head: 8
+n_embd: 512
+dropout: 0.0
+lr: 0.0006   # peak learning rate; smaller models tolerate higher rates
