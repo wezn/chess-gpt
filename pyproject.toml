@@ -15,6 +15,9 @@ dependencies = [
     "rich>=15.0.0",
 ]
 
+[project.scripts]
+chess-monitor = "chessgpt.monitor:main"
+
 [dependency-groups]
 dev = ["pytest>=8"]
 

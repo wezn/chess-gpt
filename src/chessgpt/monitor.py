@@ -1,6 +1,6 @@
 """Live terminal dashboard for training runs.
 
-    uv run python -m chessgpt.monitor                    # the most recently active run
+    uv run chess-monitor                                 # the most recently active run
     uv run python -m chessgpt.monitor runs/large-uci-move/20261023-133700 [more runs...]
     uv run python -m chessgpt.monitor --all              # one panel per run, newest first
 
