@@ -180,6 +180,7 @@ def train(cfg: dict, run_dir: Path, resume: bool = False, max_steps: int | None 
         if best_val == result["val_loss_move"]:
             save_checkpoint(run_dir / "best.pt", snapshot)
 
+    log({"type": "start", "step": step, "total_steps": total_steps, "params": n_params})
     train_start = window_start = time.monotonic()
     window_tokens = window_targets = 0
     for s, batch in zip(range(step, total_steps), prefetch(batch_for, range(step, total_steps))):

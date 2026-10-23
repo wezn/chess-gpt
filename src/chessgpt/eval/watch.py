@@ -5,7 +5,8 @@
 For every snapshot in <run>/snapshots/ this appends one line to <run>/eval.jsonl:
   - legal-move rate at every position of held-out games (overall and per phase)
   - illegal-move stats in self-play games, where the model reaches its own positions
-  - estimated Elo, from the accuracy of the model's self-play moves (see eval/elo.py)
+  - move-quality statistics of the self-play moves (accuracy, ACPL, win% lost),
+    which `chessgpt.monitor` converts to an Elo estimate with the current calibration
 and saves the self-play games to <run>/games/step-NNNNNN.pgn.
 
 The newest snapshot is evaluated first so results keep up with training; older
@@ -23,7 +24,7 @@ import chess.pgn
 import torch
 import yaml
 
-from chessgpt.eval.elo import EloCalibration, rate_games, summarize
+from chessgpt.eval.elo import rate_games, summarize
 from chessgpt.eval.games import OPENING_PLIES, Game, legality_on_games, self_play, self_play_legality, val_games
 from chessgpt.eval.player import ModelPlayer
 from chessgpt.eval.stockfish import Analyzer
@@ -47,7 +48,7 @@ def write_pgn(path: Path, games: list[Game], name: str) -> None:
             print(pgn, file=f, end="\n\n")
 
 
-def evaluate(snapshot: Path, run_dir: Path, legality_set: list[dict], openings: list[list[str]], analyzer: Analyzer, calibration: EloCalibration) -> dict:
+def evaluate(snapshot: Path, run_dir: Path, legality_set: list[dict], openings: list[list[str]], analyzer: Analyzer) -> dict:
     start = time.monotonic()
     player = ModelPlayer(snapshot)
     legality = legality_on_games(player, legality_set)
@@ -69,7 +70,6 @@ def evaluate(snapshot: Path, run_dir: Path, legality_set: list[dict], openings: 
         "selfplay_acpl": quality["acpl"],
         "selfplay_scored_moves": quality["moves"],
         "selfplay_win_loss": quality["win_loss"],
-        **calibration.estimate(quality),
         "eval_seconds": round(time.monotonic() - start),
     }
 
@@ -90,7 +90,6 @@ def main() -> None:
     held_out = val_games(dataset, args.legality_games + args.selfplay_games, min_plies=OPENING_PLIES + 10, seed=1)
     legality_set = held_out[: args.legality_games]
     openings = [g["moves"].split()[:OPENING_PLIES] for g in held_out[args.legality_games :]]
-    calibration = EloCalibration.load()
     out = run_dir / "eval.jsonl"
 
     with Analyzer(args.workers) as analyzer:
@@ -103,11 +102,11 @@ def main() -> None:
                     break
                 time.sleep(args.poll)
                 continue
-            record = evaluate(pending[-1], run_dir, legality_set, openings, analyzer, calibration)
+            record = evaluate(pending[-1], run_dir, legality_set, openings, analyzer)
             with open(out, "a") as f:
                 f.write(json.dumps(record) + "\n")
             print(
-                f"step {record['step']:,} ({record['progress']:.0%})  Elo ~{record['elo_estimate']} ({record['elo_range']})  "
+                f"step {record['step']:,} ({record['progress']:.0%})  ACPL {record['selfplay_acpl']:.1f}  "
                 f"accuracy {record['selfplay_accuracy']:.1f}  legal {record['legal_rate']:.2%}  "
                 f"self-play illegal {record['selfplay_first_try_illegal_rate']:.2%}  [{record['eval_seconds']}s]",
                 file=sys.stderr,
