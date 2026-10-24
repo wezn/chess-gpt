@@ -83,6 +83,31 @@ def row_elo(r: dict, calibration: EloCalibration) -> tuple[int, str]:
     return e["elo_estimate"], text + {"below_range": "↓", "above_range": "↑"}.get(e["elo_range"], "")
 
 
+def eval_progress(run: Path, evals: list[dict]) -> Text | None:
+    """One line on the snapshot evaluation: done/total, pace, ETA and the snapshot being evaluated now."""
+    snaps = sorted((run / "snapshots").glob("step-*.pt"))
+    if not snaps:
+        return None
+    done, total = len(evals), len(snaps)
+    out_path = run / "eval.jsonl"
+    last_write = out_path.stat().st_mtime if out_path.exists() else 0
+    # The raw-game PGN is written partway through an evaluation, so a PGN newer than the last result = in progress.
+    current = [p for p in (run / "games").glob("step-*.pgn") if "legal" not in p.stem and p.stat().st_mtime > last_write] if (run / "games").exists() else []
+    now = ""
+    if current:
+        p = max(current, key=lambda p: p.stat().st_mtime)
+        now = f"  now: step {int(p.stem.split('-')[1]):,} ({fmt_duration(time.time() - p.stat().st_mtime + 30)} in)"
+    elif done < total and time.time() - last_write > 1800:
+        now = "  [yellow]no watcher running?[/]"
+    pace = ""
+    if evals:
+        recent = [e["eval_seconds"] for e in read_jsonl(out_path) if e.get("version") == 2][-10:]  # file order = chronological
+        per = sum(recent) / len(recent)
+        pace = f"  {fmt_duration(per)} per snapshot" + (f"  ETA {fmt_duration(per * (total - done))}" if done < total else "")
+    colour = "green" if done >= total else "cyan"
+    return Text.from_markup(f"eval [{colour}]{done}/{total}[/] snapshots{pace}{now}")
+
+
 def run_panel(run: Path, totals: dict, calibration: EloCalibration | None, rows: int) -> Panel:
     metrics = read_jsonl(run / "metrics.jsonl")
     evals = sorted(read_jsonl(run / "eval.jsonl"), key=lambda r: r["step"])
@@ -112,6 +137,8 @@ def run_panel(run: Path, totals: dict, calibration: EloCalibration | None, rows:
     if val:
         losses = [v["val_loss_move"] for v in val]
         lines.append(Text.from_markup(f"val loss/move [bold]{losses[-1]:.4f}[/]  (best {min(losses):.4f})  {sparkline(losses)}"))
+    if progress_line := eval_progress(run, evals):
+        lines.append(progress_line)
 
     if evals:
         table = Table(box=None, header_style="bold", pad_edge=False)
