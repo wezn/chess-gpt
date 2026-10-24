@@ -68,7 +68,10 @@ class Throttled(io.RawIOBase):
 
 
 def open_source(source: dict, max_mbps: float | None = None) -> io.TextIOBase:
-    """Open a dump as a text stream, from a local file (`path`) or by streaming it from Lichess (`month`)."""
+    """Open a dump as a text stream, from a local file (`path`) or by streaming it from Lichess (`month`).
+
+    `months: [...]` lists several dumps; `build` reads them in order (see `sources`).
+    """
     if "path" in source:
         raw = open(source["path"], "rb")
     else:
@@ -78,6 +81,13 @@ def open_source(source: dict, max_mbps: float | None = None) -> io.TextIOBase:
     # Lichess dumps may use a large zstd window; allow up to 2 GB.
     reader = zstandard.ZstdDecompressor(max_window_size=2**31).stream_reader(raw)
     return io.TextIOWrapper(reader, encoding="utf-8", errors="replace")
+
+
+def sources(source: dict) -> list[dict]:
+    """Expand `months: [a, b]` into one single-month source per dump, in order."""
+    if "months" in source:
+        return [{**{k: v for k, v in source.items() if k != "months"}, "month": m} for m in source["months"]]
+    return [source]
 
 
 def reject_reason(game: RawGame, f: dict) -> str | None:
@@ -110,42 +120,49 @@ def build(config: dict, max_mbps: float | None = None) -> Path:
     stats: Counter[str] = Counter()
     start = time.monotonic()
 
-    with open_source(config["source"], max_mbps) as stream:
-        for game in iter_games(stream):
-            stats["scanned"] += 1
-            reason = reject_reason(game, f)
-            if reason is None:
-                moves = clean_moves(game.movetext)
-                if moves is None:
-                    reason = "unparseable_moves"
-                elif len(moves) < f.get("min_plies", 0):
-                    reason = "too_short"
-            if reason:
-                stats[f"rejected_{reason}"] += 1
-            else:
-                h = game.headers
-                writer.write(
-                    {
-                        "game_id": h.get("Site", "").rsplit("/", 1)[-1],
-                        "white_elo": int(h["WhiteElo"]),
-                        "black_elo": int(h["BlackElo"]),
-                        "time_control": h["TimeControl"],
-                        "speed": speed(h["TimeControl"]),
-                        "result": h.get("Result"),
-                        "termination": h.get("Termination"),
-                        "eco": h.get("ECO"),
-                        "opening": h.get("Opening"),
-                        "num_plies": len(moves),
-                        "moves": " ".join(moves),
-                    }
-                )
-                stats["kept"] += 1
-                stats["plies"] += len(moves)
-                if max_games and stats["kept"] >= max_games:
-                    break
-            if stats["scanned"] % 500_000 == 0:
-                rate = stats["scanned"] / (time.monotonic() - start)
-                print(f"scanned {stats['scanned']:,}  kept {stats['kept']:,}  ({rate:,.0f} games/s)", file=sys.stderr)
+    for source in sources(config["source"]):
+        if max_games and stats["kept"] >= max_games:
+            break
+        label = source.get("month") or source.get("path")
+        print(f"reading {label}", file=sys.stderr)
+        kept_before = stats["kept"]
+        with open_source(source, max_mbps) as stream:
+            for game in iter_games(stream):
+                stats["scanned"] += 1
+                reason = reject_reason(game, f)
+                if reason is None:
+                    moves = clean_moves(game.movetext)
+                    if moves is None:
+                        reason = "unparseable_moves"
+                    elif len(moves) < f.get("min_plies", 0):
+                        reason = "too_short"
+                if reason:
+                    stats[f"rejected_{reason}"] += 1
+                else:
+                    h = game.headers
+                    writer.write(
+                        {
+                            "game_id": h.get("Site", "").rsplit("/", 1)[-1],
+                            "white_elo": int(h["WhiteElo"]),
+                            "black_elo": int(h["BlackElo"]),
+                            "time_control": h["TimeControl"],
+                            "speed": speed(h["TimeControl"]),
+                            "result": h.get("Result"),
+                            "termination": h.get("Termination"),
+                            "eco": h.get("ECO"),
+                            "opening": h.get("Opening"),
+                            "num_plies": len(moves),
+                            "moves": " ".join(moves),
+                        }
+                    )
+                    stats["kept"] += 1
+                    stats["plies"] += len(moves)
+                    if max_games and stats["kept"] >= max_games:
+                        break
+                if stats["scanned"] % 500_000 == 0:
+                    rate = stats["scanned"] / (time.monotonic() - start)
+                    print(f"scanned {stats['scanned']:,}  kept {stats['kept']:,}  ({rate:,.0f} games/s)", file=sys.stderr)
+        stats[f"kept_{label}"] = stats["kept"] - kept_before
 
     stats["seconds"] = round(time.monotonic() - start)
     out = writer.finish({"config": config, "stats": dict(stats)})

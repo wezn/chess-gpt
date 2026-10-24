@@ -1,0 +1,17 @@
+name: large-uci-square-1800
+data: lichess-1800plus__uci-square
+model: large                       # configs/model/large.yaml
+block_size: 384                      # ~190 moves for every tokenizer, covers ~99% of games
+train:
+  epochs: 1
+  batch_tokens: 65536               # rows per batch = batch_tokens / block_size
+  warmup_steps: 200
+  min_lr_ratio: 0.1
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  grad_clip: 1.0
+  log_every: 50
+  eval_games: 2000
+  checkpoint_every: 0.02            # val loss + last.pt + best.pt + permanent snapshot every 2% of training
+  compile: true
+  seed: 1337

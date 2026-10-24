@@ -1,0 +1,13 @@
+# Dataset 1b: stronger human games. Rapid and slower, both players rated 1800+,
+# streamed month by month (newest first) until 5M games are collected.
+name: lichess-1800plus
+source:
+  months: ["2026-09", "2026-08", "2026-07"]
+max_games: 5000000
+filters:
+  min_elo: 1800          # applies to both players
+  max_elo: null
+  speeds: [rapid, classical, correspondence]
+  terminations: [Normal, Time forfeit]
+  min_plies: 20
+  exclude_bots: true
