@@ -1,12 +1,20 @@
 # TODO
 
-## Now: basic models
+## Done: basic models
 - [x] Dataset 1: 5M Lichess rapid+ games (`lichess-2026-09-rapid`)
 - [x] Tokenizers A/B/C: `pgn-char`, `uci-move`, `uci-square`
-- [x] Model + training loop
-- [ ] Full tiny runs (A, B, C) + time estimates for every size
-- [ ] Eval suite (legal-move rate, puzzles, vs Stockfish)
-- [ ] Experiments: one model per tokenizer (A, B, C), compared at equal compute, loss reported per move
+- [x] Model + training loop, snapshots every 2%
+- [x] Throughput benchmarks and epoch-time estimates for every size
+- [x] Eval: legal-move rate (real games by phase, self-play), ACPL/accuracy via Stockfish, Elo calibration
+- [x] Live dashboard (`chess-monitor`), play in the browser (`chess-play`)
+- [x] Large A/B/C trained for one epoch on the same games, evaluated every 2%
+
+## Next: settle the comparison
+- [ ] Final evaluation of the three best checkpoints: ≥512 self-play games each, raw and legal-only
+- [ ] Matches against Stockfish at fixed `UCI_Elo` levels as a ground-truth Elo check
+- [ ] Legal-only mode in the evaluation suite (how much Elo do illegal moves cost?)
+- [ ] Puzzle accuracy as a third strength measure
+- [ ] Second epoch / next Lichess month: strength was still rising at 100%
 
 ## After the basic models
 - [ ] Conditioning tokens: prefix games with `<elo_1800>`, `<rapid>` etc. and test "play like a 2200"
