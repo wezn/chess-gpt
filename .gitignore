@@ -12,3 +12,4 @@ __pycache__/
 
 # Notebooks
 .ipynb_checkpoints/
+/WRITEUP.md
