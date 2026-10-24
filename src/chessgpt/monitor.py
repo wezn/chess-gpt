@@ -72,6 +72,17 @@ def load_calibration() -> EloCalibration | None:
         return None
 
 
+def row_elo(r: dict, calibration: EloCalibration) -> tuple[int, str]:
+    """(point estimate, display string) for one eval row; new rows carry per-game sums, old rows pooled stats."""
+    if "strength_per_game" in r:
+        e = calibration.estimate_ci(r["strength_per_game"])
+        text = f"{e['elo_estimate']} ±{(e['elo_hi'] - e['elo_lo']) / 2:.0f}"
+    else:
+        e = calibration.estimate({"accuracy": r["selfplay_accuracy"], "acpl": r["selfplay_acpl"], "win_loss": r["selfplay_win_loss"]})
+        text = f"{e['elo_estimate']} (v1)"
+    return e["elo_estimate"], text + {"below_range": "↓", "above_range": "↑"}.get(e["elo_range"], "")
+
+
 def run_panel(run: Path, totals: dict, calibration: EloCalibration | None, rows: int) -> Panel:
     metrics = read_jsonl(run / "metrics.jsonl")
     evals = sorted(read_jsonl(run / "eval.jsonl"), key=lambda r: r["step"])
@@ -104,25 +115,23 @@ def run_panel(run: Path, totals: dict, calibration: EloCalibration | None, rows:
 
     if evals:
         table = Table(box=None, header_style="bold", pad_edge=False)
-        for col in ("progress", "step", "val loss", "Elo est.", "legal (real games)", "opening/mid/end", "self-play illegal", "moves to 1st illegal", "accuracy", "ACPL"):
+        for col in ("progress", "step", "val loss", "Elo (95% CI)", "legal (real games)", "opening/mid/end", "self-play illegal", "moves to 1st illegal", "blunders", "ACPL"):
             table.add_column(col, justify="right")
-        for r in evals[-rows:]:
-            elo = "—"
-            if calibration:
-                e = calibration.estimate({"accuracy": r["selfplay_accuracy"], "acpl": r["selfplay_acpl"], "win_loss": r["selfplay_win_loss"]})
-                elo = f"{e['elo_estimate']}" + {"below_range": "↓", "above_range": "↑"}.get(e["elo_range"], "")
+        elos = [row_elo(r, calibration) for r in evals] if calibration else [(0, "—")] * len(evals)
+        for r, (_, elo) in list(zip(evals, elos))[-rows:]:
+            acpl = r.get("strength_acpl", r.get("selfplay_acpl", float("nan")))
+            blunders = f"{r['strength_blunder_rate']:.1%}" if "strength_blunder_rate" in r else "—"
             table.add_row(
                 f"{r['progress']:.0%}", f"{r['step']:,}", f"{r['val_loss_move']:.3f}", elo,
                 f"{r['legal_rate']:.2%}",
                 "/".join(f"{r.get(f'legal_rate_{p}', float('nan')):.1%}" for p in ("opening", "middlegame", "endgame")),
                 f"{r['selfplay_first_try_illegal_rate']:.2%}", f"{r['selfplay_moves_before_first_illegal']:.0f}",
-                f"{r['selfplay_accuracy']:.1f}", f"{r['selfplay_acpl']:.1f}",
+                blunders, f"{acpl:.1f}",
             )
         lines.append(Text(""))
         lines.append(table)
         if calibration:
-            elos = [calibration.estimate({"accuracy": r["selfplay_accuracy"], "acpl": r["selfplay_acpl"], "win_loss": r["selfplay_win_loss"]})["elo_estimate"] for r in evals]
-            lines.append(Text(f"Elo over training ({calibration.primary}-based): {sparkline(elos)}"))
+            lines.append(Text(f"Elo over training (legal-only self-play, {len(evals)} snapshots): {sparkline([e for e, _ in elos])}"))
         else:
             lines.append(Text("Elo: calibration not available yet (python -m chessgpt.eval.elo calibrate)", style="dim"))
     else:

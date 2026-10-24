@@ -85,11 +85,12 @@ class Game:
     end: str = ""  # "checkmate", "draw", "max_plies" or "context"
 
 
-def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 200) -> list[Game]:
+def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 200, legal_only: bool = False) -> list[Game]:
     """The model plays both sides of each game, all games batched together.
 
     Illegal moves are retried (sampling); if every attempt fails, the model's most
     likely *legal* move (scored over all legal moves) is played, and that is recorded.
+    With legal_only=True the model decodes under a legality mask instead and never errs.
     """
     boards, games = [], []
     for sans in openings:
@@ -100,7 +101,7 @@ def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 2
         games.append(Game([], OPENING_PLIES))
     active = list(range(len(boards)))
     while active:
-        choices = player.choose_moves([boards[i] for i in active])
+        choices = player.choose_moves([boards[i] for i in active], legal_only=legal_only)
         still = []
         for i, choice in zip(active, choices):
             board, game = boards[i], games[i]

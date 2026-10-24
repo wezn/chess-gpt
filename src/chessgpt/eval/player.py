@@ -99,7 +99,10 @@ class ModelPlayer:
         self.name = cfg["name"]
 
     @torch.no_grad()
-    def _next_tokens(self, seqs: list[list[int]], sample: list[bool], batch_size: int = 256) -> list[int]:
+    def _next_tokens(
+        self, seqs: list[list[int]], sample: list[bool], batch_size: int = 256, allowed: list[list[int]] | None = None
+    ) -> list[int]:
+        """Next token for each sequence; `allowed` restricts each row to a set of token ids (legal-only mode)."""
         out = []
         for i in range(0, len(seqs), batch_size):
             chunk = seqs[i : i + batch_size]
@@ -110,15 +113,27 @@ class ModelPlayer:
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 logits = self.model(x.to(self.device))  # right padding is harmless with a causal mask
             last = logits[torch.arange(len(chunk), device=self.device), lengths - 1].float()
+            if allowed is not None:
+                mask = torch.full_like(last, float("-inf"))
+                for r, ids in enumerate(allowed[i : i + batch_size]):
+                    mask[r, ids] = 0
+                last = last + mask
             greedy = last.argmax(-1)
             sampled = torch.multinomial(torch.softmax(last, -1), 1).squeeze(-1)
             use_sample = torch.tensor(sample[i : i + batch_size], device=self.device)
             out += torch.where(use_sample, sampled, greedy).tolist()
         return out
 
-    def choose_moves(self, boards: list[chess.Board], max_attempts: int = 4) -> list[MoveChoice]:
-        """Choose a move in each position (batched). Boards must start from the standard initial position."""
+    def choose_moves(self, boards: list[chess.Board], max_attempts: int = 4, legal_only: bool = False) -> list[MoveChoice]:
+        """Choose a move in each position (batched). Boards must start from the standard initial position.
+
+        legal_only: constrained greedy decoding. At every token the model may only pick tokens
+        that still spell a legal move, so the result is always legal (status "legal", 0 attempts).
+        """
         prompts = [prompt_ids(self.tokenizer, b) for b in boards]
+        legal: list[dict[tuple[int, ...], chess.Move]] = []
+        if legal_only:
+            legal = [{tuple(self.move_tokens(b, m)): m for m in b.legal_moves} for b in boards]
         generated: list[list[int]] = [[] for _ in boards]
         attempts = [0] * len(boards)
         first_output = [""] * len(boards)
@@ -129,9 +144,22 @@ class ModelPlayer:
                 results[i] = MoveChoice(None, "context", 0, "")
 
         while active := [i for i in range(len(boards)) if results[i] is None]:
-            tokens = self._next_tokens([prompts[i] + generated[i] for i in active], [attempts[i] > 0 for i in active])
+            allowed = None
+            if legal_only:
+                allowed = []
+                for i in active:
+                    k, prefix = len(generated[i]), tuple(generated[i])
+                    allowed.append(sorted({s[k] for s in legal[i] if len(s) > k and s[:k] == prefix}))
+            tokens = self._next_tokens(
+                [prompts[i] + generated[i] for i in active], [attempts[i] > 0 for i in active], allowed=allowed
+            )
             for i, tok in zip(active, tokens):
                 generated[i].append(tok)
+                if legal_only:
+                    move = legal[i].get(tuple(generated[i]))
+                    if move is not None:
+                        results[i] = MoveChoice(move, "legal", 0, "".join(self.tokenizer.itos[t] for t in generated[i]))
+                    continue
                 status, move = parse_partial(self.tokenizer, boards[i], generated[i])
                 if status == "more":
                     continue

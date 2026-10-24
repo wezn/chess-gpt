@@ -46,17 +46,35 @@ def rate_games(analyzer: Analyzer, games: Sequence[tuple[Sequence[chess.Move], i
     return out
 
 
-STATS = ("accuracy", "acpl", "win_loss")  # per-move statistics that can be mapped to Elo
-SE_MOVES = 5000  # typical number of scored moves in one evaluation, for the noise estimate
+STATS = ("accuracy", "acpl", "win_loss", "blunder_rate")  # per-move statistics that can be mapped to Elo
+BLUNDER_WIN_LOSS = 30.0  # a move losing >= 30 win% is a blunder (Lichess's threshold)
+SE_MOVES = 20000  # typical number of scored moves in one evaluation, for the noise estimate
+SUMS = ("accuracy", "cp_loss", "win_loss", "blunders")  # per-game sums, enough to pool and to bootstrap
+
+
+def per_game(scores: Sequence[Sequence[MoveScore]]) -> list[dict]:
+    """Per-game sums of the scored moves; `pooled` turns any subset of games back into statistics."""
+    return [
+        {
+            "moves": len(g),
+            "accuracy": float(sum(s.accuracy for s in g)),
+            "cp_loss": float(sum(s.cp_loss for s in g)),
+            "win_loss": float(sum(s.win_loss for s in g)),
+            "blunders": int(sum(s.win_loss >= BLUNDER_WIN_LOSS for s in g)),
+        }
+        for g in scores
+    ]
+
+
+def pooled(games: Sequence[dict]) -> dict:
+    """Move-weighted statistics over a set of games (as from `per_game`)."""
+    n = max(1, sum(g["moves"] for g in games))
+    tot = {k: sum(g[k] for g in games) for k in SUMS}
+    return {"accuracy": tot["accuracy"] / n, "acpl": tot["cp_loss"] / n, "win_loss": tot["win_loss"] / n, "blunder_rate": tot["blunders"] / n, "moves": n}
 
 
 def summarize(scores: Sequence[MoveScore]) -> dict:
-    return {
-        "accuracy": float(np.mean([s.accuracy for s in scores])),
-        "acpl": float(np.mean([s.cp_loss for s in scores])),
-        "win_loss": float(np.mean([s.win_loss for s in scores])),
-        "moves": len(scores),
-    }
+    return pooled(per_game([scores]))
 
 
 def calibrate(dataset: str, games_per_bin: int, lo: int, hi: int, workers: int) -> None:
@@ -99,6 +117,7 @@ def fit(dataset: str) -> dict:
     """
     t = pq.read_table(MOVES_PATH).to_pandas()
     t["acpl"] = t["cp_loss"]
+    t["blunder_rate"] = (t["win_loss"] >= BLUNDER_WIN_LOSS).astype(float)
     t["bin"] = t["elo"] // BIN_WIDTH * BIN_WIDTH
     bins = t.groupby("bin").filter(lambda g: len(g) >= 500).groupby("bin")
     table = bins.agg(elo=("elo", "mean"), moves=("elo", "size"), **{k: (k, "mean") for k in STATS}, **{f"{k}_std": (k, "std") for k in STATS})
@@ -114,6 +133,8 @@ def fit(dataset: str) -> dict:
         fits[stat] = {"coef": coef.tolist(), "elo_noise": float(noise / slope), "elo_residual": residual, "monotonic": monotonic}
     usable = [s for s in STATS if fits[s]["monotonic"]]
     primary = min(usable, key=lambda s: math.hypot(fits[s]["elo_noise"], fits[s]["elo_residual"]))
+    for s in STATS:  # the combined estimate weights each statistic by 1 / (noise^2 + residual^2)
+        fits[s]["weight"] = 1 / (fits[s]["elo_noise"] ** 2 + fits[s]["elo_residual"] ** 2) if fits[s]["monotonic"] else 0.0
     result = {
         "dataset": dataset,
         "analysis_nodes": ANALYSIS_NODES,
@@ -144,23 +165,52 @@ class EloCalibration:
             raise ValueError("calibration used different settings; recalibrate")
         return cls(cal["fits"], cal["primary_stat"], *cal["elo_range"])
 
-    def elo_for(self, stat: str, value: float) -> tuple[float, str]:
+    def _curve(self, stat: str) -> tuple[np.ndarray, np.ndarray]:
         grid = np.arange(self.lo, self.hi + 1)
         curve = np.polyval(self.fits[stat]["coef"], grid)
         order = np.argsort(curve)
-        elo = float(np.interp(value, curve[order], grid[order]))
-        if curve.min() <= value <= curve.max():
+        return curve[order], grid[order]
+
+    def elo_array(self, stat: str, values) -> np.ndarray:
+        """Vectorised inversion of a statistic's curve (clamped to the calibrated range)."""
+        curve, grid = self._curve(stat)
+        return np.interp(np.asarray(values, dtype=float), curve, grid)
+
+    def elo_for(self, stat: str, value: float) -> tuple[float, str]:
+        curve, _ = self._curve(stat)
+        elo = float(self.elo_array(stat, value))
+        if curve[0] <= value <= curve[-1]:
             flag = "ok"
-        else:  # clamped; which end is it beyond?
-            flag = "below_range" if abs(value - curve[0]) < abs(value - curve[-1]) else "above_range"
+        else:  # clamped; which end is it beyond? (curve is sorted ascending here)
+            flag = "below_range" if elo <= self.lo + 1 else "above_range"
         return elo, flag
 
+    def combined(self, summary: dict) -> np.ndarray:
+        """Weighted mean of the per-statistic estimates; works on scalars or equal-length arrays."""
+        weights = {s: self.fits[s].get("weight", 0.0) for s in STATS}
+        if sum(weights.values()) == 0:  # old calibration file without weights: primary only
+            return self.elo_array(self.primary, summary[self.primary])
+        return sum(w * self.elo_array(s, summary[s]) for s, w in weights.items()) / sum(weights.values())
+
     def estimate(self, summary: dict) -> dict:
-        """Elo estimates from a summarize() result: the primary one, plus one per statistic for reference."""
-        elo, flag = self.elo_for(self.primary, summary[self.primary])
-        out = {"elo_estimate": round(elo), "elo_range": flag, "elo_stat": self.primary}
+        """Elo estimates from pooled statistics: the combined one, plus one per statistic for reference."""
+        _, flag = self.elo_for(self.primary, summary[self.primary])
+        out = {"elo_estimate": round(float(self.combined(summary))), "elo_range": flag, "elo_stat": "combined"}
         for stat in STATS:
-            out[f"elo_by_{stat}"] = round(self.elo_for(stat, summary[stat])[0])
+            if stat in summary:
+                out[f"elo_by_{stat}"] = round(self.elo_for(stat, summary[stat])[0])
+        return out
+
+    def estimate_ci(self, games: Sequence[dict], n_boot: int = 400, seed: int = 0) -> dict:
+        """Estimate from per-game sums, with a 95% bootstrap interval over games."""
+        out = self.estimate(pooled(games))
+        sums = np.array([[g["moves"], *(g[k] for k in SUMS)] for g in games], dtype=float)
+        idx = np.random.default_rng(seed).integers(0, len(games), size=(n_boot, len(games)))
+        tot = sums[idx].sum(axis=1)  # n_boot x (moves, accuracy, cp_loss, win_loss, blunders)
+        n = np.maximum(tot[:, 0], 1)
+        boot = {"accuracy": tot[:, 1] / n, "acpl": tot[:, 2] / n, "win_loss": tot[:, 3] / n, "blunder_rate": tot[:, 4] / n}
+        lo, hi = np.percentile(self.combined(boot), [2.5, 97.5])
+        out |= {"elo_lo": round(float(lo)), "elo_hi": round(float(hi))}
         return out
 
 

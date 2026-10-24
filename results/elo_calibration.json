@@ -16,9 +16,10 @@
         0.0015080825409256502,
         82.62622275799434
       ],
-      "elo_noise": 74.66329363903641,
+      "elo_noise": 37.331646819518205,
       "elo_residual": 101.67857412871884,
-      "monotonic": true
+      "monotonic": true,
+      "weight": 8.523561982895489e-05
     },
     "acpl": {
       "coef": [
@@ -26,9 +27,10 @@
         -0.0767543586046516,
         163.3021784576445
       ],
-      "elo_noise": 52.23237807620673,
+      "elo_noise": 26.116189038103364,
       "elo_residual": 59.70265573783459,
-      "monotonic": true
+      "monotonic": true,
+      "weight": 0.00023549013231780484
     },
     "win_loss": {
       "coef": [
@@ -36,9 +38,21 @@
         -0.0030689030652587025,
         8.387590353162778
       ],
-      "elo_noise": 65.4831942515114,
+      "elo_noise": 32.7415971257557,
       "elo_residual": 77.79945757094902,
-      "monotonic": true
+      "monotonic": true,
+      "weight": 0.00014035545168388237
+    },
+    "blunder_rate": {
+      "coef": [
+        1.2854580819603431e-08,
+        -7.311994056355623e-05,
+        0.11454828626246079
+      ],
+      "elo_noise": 37.81575435083426,
+      "elo_residual": 67.19156805805085,
+      "monotonic": true,
+      "weight": 0.00016821598933074652
     }
   },
   "bins": [
@@ -48,9 +62,11 @@
       "accuracy": 83.229,
       "acpl": 123.637,
       "win_loss": 6.764,
+      "blunder_rate": 0.079,
       "accuracy_std": 27.114,
       "acpl_std": 247.135,
-      "win_loss_std": 14.488
+      "win_loss_std": 14.488,
+      "blunder_rate_std": 0.27
     },
     {
       "elo": 654.103,
@@ -58,9 +74,11 @@
       "accuracy": 83.93,
       "acpl": 119.62,
       "win_loss": 6.659,
+      "blunder_rate": 0.075,
       "accuracy_std": 26.69,
       "acpl_std": 252.444,
-      "win_loss_std": 15.053
+      "win_loss_std": 15.053,
+      "blunder_rate_std": 0.263
     },
     {
       "elo": 747.286,
@@ -68,9 +86,11 @@
       "accuracy": 83.596,
       "acpl": 115.719,
       "win_loss": 6.457,
+      "blunder_rate": 0.069,
       "accuracy_std": 26.017,
       "acpl_std": 235.631,
-      "win_loss_std": 14.009
+      "win_loss_std": 14.009,
+      "blunder_rate_std": 0.254
     },
     {
       "elo": 850.124,
@@ -78,9 +98,11 @@
       "accuracy": 84.388,
       "acpl": 107.226,
       "win_loss": 6.038,
+      "blunder_rate": 0.061,
       "accuracy_std": 25.143,
       "acpl_std": 223.761,
-      "win_loss_std": 13.418
+      "win_loss_std": 13.418,
+      "blunder_rate_std": 0.24
     },
     {
       "elo": 952.174,
@@ -88,9 +110,11 @@
       "accuracy": 85.088,
       "acpl": 98.216,
       "win_loss": 5.603,
+      "blunder_rate": 0.055,
       "accuracy_std": 24.194,
       "acpl_std": 204.069,
-      "win_loss_std": 12.556
+      "win_loss_std": 12.556,
+      "blunder_rate_std": 0.229
     },
     {
       "elo": 1051.786,
@@ -98,9 +122,11 @@
       "accuracy": 85.698,
       "acpl": 90.031,
       "win_loss": 5.276,
+      "blunder_rate": 0.051,
       "accuracy_std": 23.451,
       "acpl_std": 193.71,
-      "win_loss_std": 11.96
+      "win_loss_std": 11.96,
+      "blunder_rate_std": 0.219
     },
     {
       "elo": 1147.642,
@@ -108,9 +134,11 @@
       "accuracy": 85.518,
       "acpl": 86.768,
       "win_loss": 5.147,
+      "blunder_rate": 0.045,
       "accuracy_std": 23.019,
       "acpl_std": 180.94,
-      "win_loss_std": 11.191
+      "win_loss_std": 11.191,
+      "blunder_rate_std": 0.207
     },
     {
       "elo": 1249.433,
@@ -118,9 +146,11 @@
       "accuracy": 85.719,
       "acpl": 82.926,
       "win_loss": 4.997,
+      "blunder_rate": 0.043,
       "accuracy_std": 22.607,
       "acpl_std": 173.101,
-      "win_loss_std": 10.783
+      "win_loss_std": 10.783,
+      "blunder_rate_std": 0.202
     },
     {
       "elo": 1350.994,
@@ -128,9 +158,11 @@
       "accuracy": 86.7,
       "acpl": 77.596,
       "win_loss": 4.567,
+      "blunder_rate": 0.036,
       "accuracy_std": 21.538,
       "acpl_std": 161.325,
-      "win_loss_std": 10.154
+      "win_loss_std": 10.154,
+      "blunder_rate_std": 0.186
     },
     {
       "elo": 1448.815,
@@ -138,9 +170,11 @@
       "accuracy": 87.167,
       "acpl": 71.568,
       "win_loss": 4.329,
+      "blunder_rate": 0.034,
       "accuracy_std": 20.889,
       "acpl_std": 154.539,
-      "win_loss_std": 9.649
+      "win_loss_std": 9.649,
+      "blunder_rate_std": 0.182
     },
     {
       "elo": 1548.013,
@@ -148,9 +182,11 @@
       "accuracy": 87.297,
       "acpl": 69.695,
       "win_loss": 4.219,
+      "blunder_rate": 0.03,
       "accuracy_std": 20.305,
       "acpl_std": 148.871,
-      "win_loss_std": 9.395
+      "win_loss_std": 9.395,
+      "blunder_rate_std": 0.17
     },
     {
       "elo": 1648.284,
@@ -158,9 +194,11 @@
       "accuracy": 87.153,
       "acpl": 67.064,
       "win_loss": 4.219,
+      "blunder_rate": 0.031,
       "accuracy_std": 20.478,
       "acpl_std": 142.771,
-      "win_loss_std": 9.079
+      "win_loss_std": 9.079,
+      "blunder_rate_std": 0.172
     },
     {
       "elo": 1748.888,
@@ -168,9 +206,11 @@
       "accuracy": 87.113,
       "acpl": 66.128,
       "win_loss": 4.227,
+      "blunder_rate": 0.03,
       "accuracy_std": 20.332,
       "acpl_std": 142.26,
-      "win_loss_std": 9.113
+      "win_loss_std": 9.113,
+      "blunder_rate_std": 0.17
     },
     {
       "elo": 1852.018,
@@ -178,9 +218,11 @@
       "accuracy": 87.839,
       "acpl": 61.519,
       "win_loss": 3.923,
+      "blunder_rate": 0.025,
       "accuracy_std": 19.539,
       "acpl_std": 136.538,
-      "win_loss_std": 8.61
+      "win_loss_std": 8.61,
+      "blunder_rate_std": 0.157
     },
     {
       "elo": 1948.642,
@@ -188,9 +230,11 @@
       "accuracy": 88.447,
       "acpl": 58.001,
       "win_loss": 3.697,
+      "blunder_rate": 0.025,
       "accuracy_std": 19.039,
       "acpl_std": 130.74,
-      "win_loss_std": 8.252
+      "win_loss_std": 8.252,
+      "blunder_rate_std": 0.155
     },
     {
       "elo": 2048.448,
@@ -198,9 +242,11 @@
       "accuracy": 88.757,
       "acpl": 54.324,
       "win_loss": 3.519,
+      "blunder_rate": 0.02,
       "accuracy_std": 18.465,
       "acpl_std": 118.52,
-      "win_loss_std": 7.713
+      "win_loss_std": 7.713,
+      "blunder_rate_std": 0.139
     },
     {
       "elo": 2149.053,
@@ -208,9 +254,11 @@
       "accuracy": 89.541,
       "acpl": 49.264,
       "win_loss": 3.249,
+      "blunder_rate": 0.017,
       "accuracy_std": 17.583,
       "acpl_std": 117.955,
-      "win_loss_std": 7.489
+      "win_loss_std": 7.489,
+      "blunder_rate_std": 0.131
     },
     {
       "elo": 2248.77,
@@ -218,9 +266,11 @@
       "accuracy": 90.564,
       "acpl": 42.822,
       "win_loss": 2.829,
+      "blunder_rate": 0.014,
       "accuracy_std": 16.449,
       "acpl_std": 98.633,
-      "win_loss_std": 6.401
+      "win_loss_std": 6.401,
+      "blunder_rate_std": 0.118
     },
     {
       "elo": 2345.414,
@@ -228,9 +278,11 @@
       "accuracy": 91.231,
       "acpl": 38.729,
       "win_loss": 2.567,
+      "blunder_rate": 0.01,
       "accuracy_std": 15.363,
       "acpl_std": 92.267,
-      "win_loss_std": 5.865
+      "win_loss_std": 5.865,
+      "blunder_rate_std": 0.098
     },
     {
       "elo": 2438.924,
@@ -238,9 +290,11 @@
       "accuracy": 91.511,
       "acpl": 39.609,
       "win_loss": 2.522,
+      "blunder_rate": 0.012,
       "accuracy_std": 15.361,
       "acpl_std": 97.4,
-      "win_loss_std": 6.105
+      "win_loss_std": 6.105,
+      "blunder_rate_std": 0.109
     }
   ]
 }

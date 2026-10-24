@@ -4,27 +4,31 @@
 
 For every snapshot in <run>/snapshots/ this appends one line to <run>/eval.jsonl:
   - legal-move rate at every position of held-out games (overall and per phase)
-  - illegal-move stats in self-play games, where the model reaches its own positions
-  - move-quality statistics of the self-play moves (accuracy, ACPL, win% lost),
-    which `chessgpt.monitor` converts to an Elo estimate with the current calibration
-and saves the self-play games to <run>/games/step-NNNNNN.pgn.
+  - illegal-move stats in raw self-play games (the model writes its moves freely)
+  - strength: many legal-only self-play games from a fixed set of openings, every move
+    scored by Stockfish (accuracy, ACPL, win% lost, blunder rate) and kept per game, so
+    `chessgpt.monitor` can turn them into an Elo estimate with a confidence interval
+and saves the games to <run>/games/step-NNNNNN.pgn (raw) and step-NNNNNN-legal.pgn.
 
-The newest snapshot is evaluated first so results keep up with training; older
-ones are filled in afterwards. Exits once the final snapshot is evaluated.
+Order: the newest snapshot first, then always the pending snapshot farthest from any
+evaluated one, so the curve is coarse but complete early and fills in. Exits once
+the final snapshot is evaluated.
 """
 
 import argparse
 import json
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 import chess
 import chess.pgn
+import numpy as np
 import torch
 import yaml
 
-from chessgpt.eval.elo import rate_games, summarize
+from chessgpt.eval.elo import per_game, pooled, rate_games
 from chessgpt.eval.games import OPENING_PLIES, Game, legality_on_games, self_play, self_play_legality, val_games
 from chessgpt.eval.player import ModelPlayer
 from chessgpt.eval.stockfish import Analyzer
@@ -48,37 +52,54 @@ def write_pgn(path: Path, games: list[Game], name: str) -> None:
             print(pgn, file=f, end="\n\n")
 
 
-def evaluate(snapshot: Path, run_dir: Path, legality_set: list[dict], openings: list[list[str]], analyzer: Analyzer) -> dict:
+def evaluate(
+    snapshot: Path, run_dir: Path, legality_set: list[dict], raw_openings: list[list[str]], strength_openings: list[list[str]], analyzer: Analyzer
+) -> dict:
     start = time.monotonic()
     player = ModelPlayer(snapshot)
+    name = f"{player.name}@{player.step}"
     legality = legality_on_games(player, legality_set)
-    games = self_play(player, openings, max_plies=MAX_PLIES)
-    write_pgn(run_dir / "games" / f"{snapshot.stem}.pgn", games, f"{player.name}@{player.step}")
+    raw = self_play(player, raw_openings, max_plies=MAX_PLIES)
+    write_pgn(run_dir / "games" / f"{snapshot.stem}.pgn", raw, name)
+    strong = self_play(player, strength_openings, max_plies=MAX_PLIES, legal_only=True)
+    write_pgn(run_dir / "games" / f"{snapshot.stem}-legal.pgn", strong, name)
     del player
     torch.cuda.empty_cache()
 
-    scores = rate_games(analyzer, [(g.moves, g.opening_plies) for g in games])
-    quality = summarize([s for game in scores for s in game])
+    games = per_game(rate_games(analyzer, [(g.moves, g.opening_plies) for g in strong]))
+    quality = pooled(games)
+    ends = Counter(g.end for g in strong)
     ckpt_meta = torch.load(snapshot, map_location="cpu", weights_only=False, mmap=True)
     return {
+        "version": 2,
         "step": ckpt_meta["step"],
         "progress": ckpt_meta.get("progress"),
         "val_loss_move": ckpt_meta.get("val_loss_move"),
         **legality,
-        **self_play_legality(games),
-        "selfplay_accuracy": quality["accuracy"],
-        "selfplay_acpl": quality["acpl"],
-        "selfplay_scored_moves": quality["moves"],
-        "selfplay_win_loss": quality["win_loss"],
+        **self_play_legality(raw),
+        "strength_games": len(strong),
+        "strength_avg_plies": float(np.mean([len(g.moves) for g in strong])),
+        **{f"strength_end_{k}": v / len(strong) for k, v in ends.items()},
+        **{f"strength_{k}": quality[k] for k in ("accuracy", "acpl", "win_loss", "blunder_rate")},
+        "strength_scored_moves": quality["moves"],
+        "strength_per_game": games,
         "eval_seconds": round(time.monotonic() - start),
     }
+
+
+def next_pending(pending: list[Path], done: set[int]) -> Path:
+    """Newest first; afterwards the snapshot farthest from anything evaluated (coarse-to-fine)."""
+    if not done:
+        return pending[-1]
+    return max(pending, key=lambda p: (min(abs(snapshot_step(p) - d) for d in done), snapshot_step(p)))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("run_dir", type=Path)
-    parser.add_argument("--legality-games", type=int, default=100)
-    parser.add_argument("--selfplay-games", type=int, default=64)
+    parser.add_argument("--legality-games", type=int, default=100, help="held-out games for the legal-move rate")
+    parser.add_argument("--selfplay-games", type=int, default=64, help="raw self-play games, for illegal-move stats")
+    parser.add_argument("--strength-games", type=int, default=256, help="legal-only self-play games scored for Elo")
     parser.add_argument("--workers", type=int, default=12, help="Stockfish processes")
     parser.add_argument("--once", action="store_true", help="evaluate existing snapshots, then exit")
     parser.add_argument("--poll", type=int, default=30, help="seconds between checks for new snapshots")
@@ -87,14 +108,17 @@ def main() -> None:
     run_dir = args.run_dir
     cfg = yaml.safe_load(open(run_dir / "config.yaml"))
     dataset = cfg["data"].split("__")[0]
-    held_out = val_games(dataset, args.legality_games + args.selfplay_games, min_plies=OPENING_PLIES + 10, seed=1)
+    n_raw, n_strong = args.selfplay_games, args.strength_games
+    held_out = val_games(dataset, args.legality_games + n_raw + n_strong, min_plies=OPENING_PLIES + 10, seed=1)
     legality_set = held_out[: args.legality_games]
     openings = [g["moves"].split()[:OPENING_PLIES] for g in held_out[args.legality_games :]]
+    raw_openings, strength_openings = openings[:n_raw], openings[n_raw:]
     out = run_dir / "eval.jsonl"
 
     with Analyzer(args.workers) as analyzer:
         while True:
             records = [json.loads(line) for line in open(out)] if out.exists() else []
+            records = [r for r in records if r.get("version") == 2]  # older rows are re-evaluated
             done = {r["step"] for r in records}
             pending = [p for p in sorted((run_dir / "snapshots").glob("step-*.pt"), key=snapshot_step) if snapshot_step(p) not in done]
             if not pending:
@@ -102,12 +126,12 @@ def main() -> None:
                     break
                 time.sleep(args.poll)
                 continue
-            record = evaluate(pending[-1], run_dir, legality_set, openings, analyzer)
+            record = evaluate(next_pending(pending, done), run_dir, legality_set, raw_openings, strength_openings, analyzer)
             with open(out, "a") as f:
                 f.write(json.dumps(record) + "\n")
             print(
-                f"step {record['step']:,} ({record['progress']:.0%})  ACPL {record['selfplay_acpl']:.1f}  "
-                f"accuracy {record['selfplay_accuracy']:.1f}  legal {record['legal_rate']:.2%}  "
+                f"step {record['step']:,} ({record['progress']:.0%})  ACPL {record['strength_acpl']:.1f}  "
+                f"blunders {record['strength_blunder_rate']:.2%}  legal {record['legal_rate']:.2%}  "
                 f"self-play illegal {record['selfplay_first_try_illegal_rate']:.2%}  [{record['eval_seconds']}s]",
                 file=sys.stderr,
             )
