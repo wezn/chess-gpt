@@ -46,8 +46,14 @@ class Analyzer:
     def __init__(self, workers: int = 16):
         self.pool = multiprocessing.get_context("spawn").Pool(workers, initializer=_init_worker)
 
-    def evaluate(self, fens: Sequence[str]) -> list[int]:
-        return self.pool.map(_evaluate, fens, chunksize=16)
+    def evaluate(self, fens: Sequence[str], progress=None) -> list[int]:
+        """Evaluate positions in parallel; `progress(done, total)` is called every few hundred positions."""
+        out = []
+        for i, cp in enumerate(self.pool.imap(_evaluate, fens, chunksize=16), 1):
+            out.append(cp)
+            if progress and (i % 256 == 0 or i == len(fens)):
+                progress(i, len(fens))
+        return out
 
     def close(self) -> None:
         self.pool.terminate()

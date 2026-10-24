@@ -17,6 +17,7 @@ the final snapshot is evaluated.
 
 import argparse
 import json
+import os
 import sys
 import time
 from collections import Counter
@@ -40,6 +41,27 @@ def snapshot_step(path: Path) -> int:
     return int(path.stem.split("-")[1])
 
 
+class Status:
+    """Writes <run>/eval-status.json after every step of an evaluation, for the dashboard."""
+
+    def __init__(self, run_dir: Path):
+        self.path = run_dir / "eval-status.json"
+        self.step = None
+        self.started = 0.0
+
+    def begin(self, step: int) -> None:
+        self.step, self.started = step, time.time()
+        self("starting")
+
+    def __call__(self, phase: str) -> None:
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"step": self.step, "phase": phase, "started": self.started, "updated": time.time()}))
+        os.replace(tmp, self.path)
+
+    def clear(self) -> None:
+        self.path.unlink(missing_ok=True)
+
+
 def write_pgn(path: Path, games: list[Game], name: str) -> None:
     path.parent.mkdir(exist_ok=True)
     with open(path, "w") as f:
@@ -56,17 +78,23 @@ def evaluate(
     snapshot: Path, run_dir: Path, legality_set: list[dict], raw_openings: list[list[str]], strength_openings: list[list[str]], analyzer: Analyzer
 ) -> dict:
     start = time.monotonic()
+    status = Status(run_dir)
+    status.begin(snapshot_step(snapshot))
     player = ModelPlayer(snapshot)
     name = f"{player.name}@{player.step}"
-    legality = legality_on_games(player, legality_set)
-    raw = self_play(player, raw_openings, max_plies=MAX_PLIES)
+    legality = legality_on_games(player, legality_set, progress=lambda d, n: status(f"legality on real games: {d:,}/{n:,} positions"))
+    raw = self_play(player, raw_openings, max_plies=MAX_PLIES, progress=lambda ply, a, n: status(f"raw self-play: move {ply // 2 + 1}, {a}/{n} games going"))
     write_pgn(run_dir / "games" / f"{snapshot.stem}.pgn", raw, name)
-    strong = self_play(player, strength_openings, max_plies=MAX_PLIES, legal_only=True)
+    strong = self_play(
+        player, strength_openings, max_plies=MAX_PLIES, legal_only=True,
+        progress=lambda ply, a, n: status(f"legal-only self-play: move {ply // 2 + 1}, {a}/{n} games going"),
+    )
     write_pgn(run_dir / "games" / f"{snapshot.stem}-legal.pgn", strong, name)
     del player
     torch.cuda.empty_cache()
 
-    games = per_game(rate_games(analyzer, [(g.moves, g.opening_plies) for g in strong]))
+    games = per_game(rate_games(analyzer, [(g.moves, g.opening_plies) for g in strong], progress=lambda d, n: status(f"Stockfish scoring: {d:,}/{n:,} positions")))
+    status.clear()
     quality = pooled(games)
     ends = Counter(g.end for g in strong)
     ckpt_meta = torch.load(snapshot, map_location="cpu", weights_only=False, mmap=True)

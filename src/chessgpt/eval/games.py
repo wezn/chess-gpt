@@ -39,11 +39,12 @@ def val_games(dataset: str, n: int, min_plies: int = 0, seed: int = 0) -> list[d
     return rows[:n]
 
 
-def legality_on_games(player: ModelPlayer, games: list[dict]) -> dict:
+def legality_on_games(player: ModelPlayer, games: list[dict], progress=None) -> dict:
     """Ask the model for a move at every position of real games (one attempt, greedy).
 
     Reports the legal-move rate overall and per game phase, and how often the
-    model picked the move the human actually played.
+    model picked the move the human actually played. `progress(done, total)` is
+    called after every batch of positions.
     """
     boards, human = [], []
     for g in games:
@@ -53,7 +54,11 @@ def legality_on_games(player: ModelPlayer, games: list[dict]) -> dict:
             move = board.parse_san(san)
             human.append(move)
             board.push(move)
-    choices = player.choose_moves(boards, max_attempts=1)
+    choices = []
+    for i in range(0, len(boards), 1024):
+        choices += player.choose_moves(boards[i : i + 1024], max_attempts=1)
+        if progress:
+            progress(len(choices), len(boards))
     stats: Counter[str] = Counter()
     for board, choice, move in zip(boards, choices, human):
         if choice.status == "context":
@@ -85,12 +90,13 @@ class Game:
     end: str = ""  # "checkmate", "draw", "max_plies" or "context"
 
 
-def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 200, legal_only: bool = False) -> list[Game]:
+def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 200, legal_only: bool = False, progress=None) -> list[Game]:
     """The model plays both sides of each game, all games batched together.
 
     Illegal moves are retried (sampling); if every attempt fails, the model's most
     likely *legal* move (scored over all legal moves) is played, and that is recorded.
     With legal_only=True the model decodes under a legality mask instead and never errs.
+    `progress(ply, active_games, total_games)` is called after every round of moves.
     """
     boards, games = [], []
     for sans in openings:
@@ -101,6 +107,8 @@ def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 2
         games.append(Game([], OPENING_PLIES))
     active = list(range(len(boards)))
     while active:
+        if progress:
+            progress(max(len(boards[i].move_stack) for i in active), len(active), len(boards))
         choices = player.choose_moves([boards[i] for i in active], legal_only=legal_only)
         still = []
         for i, choice in zip(active, choices):

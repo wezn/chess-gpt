@@ -35,10 +35,10 @@ BIN_WIDTH = 100
 MAX_ELO_GAP = 150  # calibration games are between similarly rated players, like self-play
 
 
-def rate_games(analyzer: Analyzer, games: Sequence[tuple[Sequence[chess.Move], int]]) -> list[list[MoveScore]]:
+def rate_games(analyzer: Analyzer, games: Sequence[tuple[Sequence[chess.Move], int]], progress=None) -> list[list[MoveScore]]:
     """Score every move after the opening of each (moves, opening_plies) game, analysing all positions at once."""
     fens = [game_fens(moves) for moves, _ in games]
-    evals = analyzer.evaluate([f for game in fens for f in game])
+    evals = analyzer.evaluate([f for game in fens for f in game], progress=progress)
     out, i = [], 0
     for (moves, opening), game in zip(games, fens):
         out.append(score_game(evals[i : i + len(game)], first_ply=opening))
