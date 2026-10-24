@@ -81,17 +81,16 @@ class Game:
     moves: list[chess.Move]
     opening_plies: int
     illegal_attempts: list[int] = field(default_factory=list)  # per model move
-    random_fallback: list[bool] = field(default_factory=list)  # per model move: every attempt was illegal
+    fallback: list[bool] = field(default_factory=list)  # per model move: every attempt was illegal, best legal move played instead
     end: str = ""  # "checkmate", "draw", "max_plies" or "context"
 
 
-def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 200, seed: int = 0) -> list[Game]:
+def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 200) -> list[Game]:
     """The model plays both sides of each game, all games batched together.
 
-    Illegal moves are retried (sampling); if every attempt fails, a random legal
-    move is played so the game can continue, and that is recorded.
+    Illegal moves are retried (sampling); if every attempt fails, the model's most
+    likely *legal* move (scored over all legal moves) is played, and that is recorded.
     """
-    rng = random.Random(seed)
     boards, games = [], []
     for sans in openings:
         board = chess.Board()
@@ -109,9 +108,14 @@ def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 2
                 game.end = "context"
                 continue
             fallback = choice.move is None
-            board.push(rng.choice(list(board.legal_moves)) if fallback else choice.move)
+            if fallback:
+                ranked = player.rank_legal_moves(board)
+                if ranked is None:  # a long move would not fit the context
+                    game.end = "context"
+                    continue
+            board.push(ranked[0][0] if fallback else choice.move)
             game.illegal_attempts.append(choice.illegal_attempts)
-            game.random_fallback.append(fallback)
+            game.fallback.append(fallback)
             if board.is_checkmate():
                 game.end = "checkmate"
             elif board.is_game_over(claim_draw=True):
@@ -129,13 +133,13 @@ def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 2
 def self_play_legality(games: list[Game]) -> dict:
     """Illegal-move statistics in the model's own games, where it reaches positions it created itself."""
     attempts = np.concatenate([g.illegal_attempts for g in games])
-    fallback = np.concatenate([g.random_fallback for g in games])
+    fallback = np.concatenate([g.fallback for g in games])
     # Moves played before the first illegal first-attempt, per game.
     until_first = [next((k for k, a in enumerate(g.illegal_attempts) if a > 0), len(g.illegal_attempts)) for g in games]
     ends = Counter(g.end for g in games)
     return {
         "selfplay_first_try_illegal_rate": float(np.mean(attempts > 0)),
-        "selfplay_random_fallback_rate": float(np.mean(fallback)),
+        "selfplay_fallback_rate": float(np.mean(fallback)),
         "selfplay_moves_before_first_illegal": float(np.mean(until_first)),
         "selfplay_games_without_illegal": float(np.mean([u == len(g.illegal_attempts) for u, g in zip(until_first, games)])),
         "selfplay_avg_plies": float(np.mean([len(g.moves) for g in games])),

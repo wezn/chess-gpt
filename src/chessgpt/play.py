@@ -5,7 +5,7 @@
 
 Pick any run's best checkpoint or latest snapshot, your colour, and a mode:
   raw         the model writes its move like in the evaluations; illegal attempts are
-              shown, and if every attempt fails a random legal move is played
+              shown, and if every attempt fails its most likely legal move is played
   legal-only  the model's most likely *legal* move (never illegal)
 The panel shows the model's top candidate moves with their probabilities.
 """
@@ -87,10 +87,10 @@ class Games:
                 info |= {"status": "legal"}
             else:
                 choice = player.choose_moves([board])[0]
-                move = choice.move or random.choice(list(board.legal_moves))
+                move = choice.move if choice.move is not None else ranked[0][0]
                 info |= {"status": choice.status, "illegal_attempts": choice.illegal_attempts, "first_output": choice.first_output}
                 if choice.move is None:
-                    info["note"] = "every attempt was illegal; played a random legal move"
+                    info["note"] = "every attempt was illegal; played its most likely legal move instead"
         info["san"] = board.san(move)
         board.push(move)
         g["last"] = info
