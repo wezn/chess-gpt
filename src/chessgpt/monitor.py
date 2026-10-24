@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 import torch
-from rich.console import Group
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
@@ -177,25 +177,28 @@ def main() -> None:
     parser.add_argument("runs", nargs="*", type=Path)
     parser.add_argument("--all", action="store_true", help="show every run")
     parser.add_argument("--interval", type=float, default=5, help="seconds between refreshes")
-    parser.add_argument("--rows", type=int, default=12, help="snapshot evaluations to show per run")
+    parser.add_argument("--rows", type=int, help="snapshot evaluations to show per run (default: fit the terminal)")
     parser.add_argument("--once", action="store_true", help="print once and exit")
     args = parser.parse_args()
 
     totals: dict = {}
+    console = Console()
 
     def render():
         runs = [r.resolve() for r in args.runs] or find_runs(args.all)
         calibration = load_calibration()
-        return Group(*(run_panel(r, totals, calibration, args.rows) for r in runs)) if runs else Text("no runs found")
+        # Fit the terminal: each panel needs ~9 lines besides its table rows.
+        rows = args.rows or max(3, (console.size.height - 9 * max(1, len(runs))) // max(1, len(runs)))
+        return Group(*(run_panel(r, totals, calibration, rows) for r in runs)) if runs else Text("no runs found")
 
     if args.once:
-        from rich.console import Console
         Console(width=160).print(render())
         return
-    with Live(render(), refresh_per_second=1, screen=False) as live:
+    # The alternate screen is double-buffered, so redraws don't flicker (also over ssh); Ctrl+C restores the terminal.
+    with Live(render(), console=console, screen=True, auto_refresh=False) as live:
         while True:
             time.sleep(args.interval)
-            live.update(render())
+            live.update(render(), refresh=True)
 
 
 if __name__ == "__main__":
