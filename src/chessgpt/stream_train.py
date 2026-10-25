@@ -19,6 +19,11 @@ learning rate decays linearly over `cooldown_snapshots` snapshot periods, a last
 written, and the model is done. Running out of data does the same. The process exits when
 every model is done.
 
+A member with `warm_start: <run dir>` continues that finished run: weights, optimizer state,
+step counter and snapshot numbering are taken from its last.pt, its metrics.jsonl and
+eval.jsonl are carried over so the dashboard shows one continuous history, and the stream
+is entered at `start_block` (the first games it has not already trained on).
+
 Each model gets an ordinary run directory, runs/<name>-<tokenizer>/<timestamp>/, with the
 usual config.yaml, metrics.jsonl, last.pt, best.pt and snapshots/, so chess-monitor,
 chessgpt.eval.watch and chess-play work unchanged. runs/<name>/status.json says which
@@ -154,6 +159,7 @@ class Member:
     cfg: dict
     run_dir: Path
     period: float  # steps per snapshot
+    spec: dict = field(default_factory=dict)  # the member's entry in the experiment config
     model: torch.nn.Module = None
     compiled: torch.nn.Module = None
     optimizer: torch.optim.Optimizer = None
@@ -173,9 +179,11 @@ class Member:
     def next_snapshot_step(self) -> int:
         return round((self.snapshots + 1) * self.period)
 
+    start_step: int = 0  # step at which this process started training the model (warmup counts from here)
+
     def lr_at(self, step: int, t: dict) -> float:
-        if step < t["warmup_steps"]:
-            return t["lr"] * (step + 1) / t["warmup_steps"]
+        if step - self.start_step < t["warmup_steps"]:
+            return t["lr"] * (step - self.start_step + 1) / t["warmup_steps"]
         if self.cooldown_start is not None:
             frac = min(1.0, (step - self.cooldown_start) / max(1, self.cooldown_end - self.cooldown_start))
             return t["lr"] * (1 - frac * (1 - t["min_lr_ratio"]))
@@ -227,7 +235,19 @@ def train_group(cfg: dict, group_dir: Path, members: list[Member], resume: bool)
         block = m.cfg["block_size"]
         m.model = GPT(GPTConfig(vocab_size=meta["vocab_size"], block_size=block, **{k: v for k, v in m.cfg["model"].items() if k != "name"})).to(device)
         m.optimizer = m.model.configure_optimizer(t["lr"], t["weight_decay"], tuple(t["betas"]))
-        position = (0, 0)
+        position = (m.spec.get("start_block", 0), 0)
+        if not resume and m.spec.get("warm_start"):
+            src = REPO_ROOT / m.spec["warm_start"]
+            ckpt = torch.load(src / "last.pt", map_location=device, weights_only=False)
+            m.model.load_state_dict(ckpt["model"])
+            m.optimizer.load_state_dict(ckpt["optimizer"])
+            m.step, m.best_val = ckpt["step"], ckpt["best_val"]
+            m.snapshots = round(m.step / m.period)
+            m.games_seen = int(m.spec.get("games_already_seen", 0))
+            for name in ("metrics.jsonl", "eval.jsonl"):
+                if (src / name).exists() and not (m.run_dir / name).exists():
+                    (m.run_dir / name).write_bytes((src / name).read_bytes())
+            print(f"{m.tokenizer}: warm start from {src} at step {m.step:,} (snapshot {m.snapshots}), entering the stream at block {position[0]}", file=sys.stderr)
         if resume and (m.run_dir / "last.pt").exists():
             ckpt = torch.load(m.run_dir / "last.pt", map_location=device, weights_only=False)
             m.model.load_state_dict(ckpt["model"])
@@ -235,6 +255,7 @@ def train_group(cfg: dict, group_dir: Path, members: list[Member], resume: bool)
             m.step, m.best_val, m.snapshots, m.games_seen = ckpt["step"], ckpt["best_val"], ckpt["snapshots"], ckpt["games_seen"]
             m.cooldown_start, m.cooldown_end, m.done = ckpt.get("cooldown_start"), ckpt.get("cooldown_end"), ckpt.get("done", False)
             position = tuple(ckpt["stream_position"])
+        m.start_step = m.step
         m.compiled = torch.compile(m.model) if t.get("compile", True) else m.model
         m.validator = Validator(TokenizedSplit(tok_dir, "val"), meta["tokenizer"], block, t["eval_games"], rows_of(m))
         m.data = StreamData(cfg["data"], m.tokenizer, block, rows_of(m), t["seed"], t["block_chunks"], position)
@@ -349,7 +370,7 @@ def main() -> None:
         if not (run_dir / "config.yaml").exists():
             yaml.safe_dump(mcfg, open(run_dir / "config.yaml", "w"), sort_keys=False)
             yaml.safe_dump(cfg, open(run_dir / "group.yaml", "w"), sort_keys=False)
-        members.append(Member(spec["tokenizer"], mcfg, run_dir, spec["snapshot_period"]))
+        members.append(Member(spec["tokenizer"], mcfg, run_dir, spec["snapshot_period"], spec))
     print("runs: " + ", ".join(str(m.run_dir) for m in members), file=sys.stderr)
     train_group(cfg, group_dir, members, resume=bool(args.resume))
 

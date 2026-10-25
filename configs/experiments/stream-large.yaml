@@ -1,19 +1,21 @@
-# Three large models trained round-robin on the streaming dataset, one per tokenizer.
-# snapshot_period = steps per 2% in the single-epoch runs, so snapshots line up with them:
+# The three finished large models continue training, round-robin, on the streaming dataset.
+# snapshot_period = steps per 2% in their single-epoch runs, so snapshot numbering continues:
 #   pgn-char 29228/50, uci-move 5388/50, uci-square 10750/50.
+# The first 5M games of the stream (chunks 1-20, blocks 0-4) are the games they already trained on,
+# so every member enters the stream at block 5.
 name: stream-large
 data: lichess-stream
 model: large
 members:
-  - {tokenizer: pgn-char,   block_size: 1024, snapshot_period: 584.56}
-  - {tokenizer: uci-move,   block_size: 192,  snapshot_period: 107.76}
-  - {tokenizer: uci-square, block_size: 384,  snapshot_period: 215.0}
+  - {tokenizer: pgn-char,   block_size: 1024, snapshot_period: 584.56, warm_start: runs/large-pgn-char/20261023-172317,   start_block: 5, games_already_seen: 4949840}
+  - {tokenizer: uci-move,   block_size: 192,  snapshot_period: 107.76, warm_start: runs/large-uci-move/20261023-133700,   start_block: 5, games_already_seen: 4949840}
+  - {tokenizer: uci-square, block_size: 384,  snapshot_period: 215.0,  warm_start: runs/large-uci-square/20261023-144701, start_block: 5, games_already_seen: 4949840}
 train:
   batch_tokens: 65536
-  warmup_steps: 200
+  warmup_steps: 200             # eases the LR back up from the finished runs' decayed 4e-5
   min_lr_ratio: 0.1
-  cooldown_snapshots: 2      # after STOP, decay the LR over this many snapshot periods, then finish
-  block_chunks: 4            # 4 x 250k games shuffled together
+  cooldown_snapshots: 2         # after STOP, decay the LR over this many snapshot periods, then finish
+  block_chunks: 4               # 4 x 250k games shuffled together
   weight_decay: 0.1
   betas: [0.9, 0.95]
   grad_clip: 1.0
