@@ -202,11 +202,11 @@ def run_panel(run: Path, totals: dict, calibration: EloCalibration | None, rows:
             rate = (recent[-1]["step"] - recent[0]["step"]) / max(1, recent[-1]["elapsed_s"] - recent[0]["elapsed_s"])
             eta = f"  ETA {fmt_duration((total - step) / rate)}" if rate > 0 else ""
         lines.append(Text.from_markup(f"{status}  step {progress}  elapsed {fmt_duration(last['elapsed_s'])}{eta}{extra}"))
-    elif group and group["mine"]:
-        lines.append(Text.from_markup(f"[blue]starting[/]  (round-robin group {group.get('round', 0)}, {group['now']} is training)"))
         lines.append(Text.from_markup(
             f"train loss [bold]{last['loss']:.4f}[/]  lr {last['lr']:.2e}  {last['tokens_per_s'] / 1e3:,.0f}k tok/s  {last['tflops']:.1f} TFLOPS"
         ))
+    elif group and group["mine"]:
+        lines.append(Text.from_markup(f"[blue]starting[/]  (round-robin group {group.get('round', 0)}, {group['now']} is training)"))
     if val:
         losses = [v["val_loss_move"] for v in val]
         lines.append(Text.from_markup(f"val loss/move [bold]{losses[-1]:.4f}[/]  (best {min(losses):.4f})  {sparkline(losses)}"))
