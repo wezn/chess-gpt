@@ -1,0 +1,17 @@
+[Unit]
+Description=Chess GPT: tokenizer follower for the streaming dataset
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dev/projects/gpts/chess
+ExecStart=/home/dev/.local/bin/uv run --no-sync python -m chessgpt.data.pretokenize lichess-stream --follow --workers 6
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStopSec=120
+StandardOutput=append:/home/dev/projects/gpts/chess/data/logs/follow-stream.log
+StandardError=append:/home/dev/projects/gpts/chess/data/logs/follow-stream.log
+
+[Install]
+WantedBy=default.target

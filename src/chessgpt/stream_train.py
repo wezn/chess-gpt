@@ -236,7 +236,7 @@ def train_group(cfg: dict, group_dir: Path, members: list[Member], resume: bool)
         m.model = GPT(GPTConfig(vocab_size=meta["vocab_size"], block_size=block, **{k: v for k, v in m.cfg["model"].items() if k != "name"})).to(device)
         m.optimizer = m.model.configure_optimizer(t["lr"], t["weight_decay"], tuple(t["betas"]))
         position = (m.spec.get("start_block", 0), 0)
-        if not resume and m.spec.get("warm_start"):
+        if m.spec.get("warm_start") and not (m.run_dir / "last.pt").exists():  # first start, or a resume before any snapshot was saved
             src = REPO_ROOT / m.spec["warm_start"]
             ckpt = torch.load(src / "last.pt", map_location=device, weights_only=False)
             m.model.load_state_dict(ckpt["model"])
@@ -248,7 +248,7 @@ def train_group(cfg: dict, group_dir: Path, members: list[Member], resume: bool)
                 if (src / name).exists() and not (m.run_dir / name).exists():
                     (m.run_dir / name).write_bytes((src / name).read_bytes())
             print(f"{m.tokenizer}: warm start from {src} at step {m.step:,} (snapshot {m.snapshots}), entering the stream at block {position[0]}", file=sys.stderr)
-        if resume and (m.run_dir / "last.pt").exists():
+        if (m.run_dir / "last.pt").exists():
             ckpt = torch.load(m.run_dir / "last.pt", map_location=device, weights_only=False)
             m.model.load_state_dict(ckpt["model"])
             m.optimizer.load_state_dict(ckpt["optimizer"])

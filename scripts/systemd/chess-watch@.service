@@ -1,0 +1,17 @@
+[Unit]
+Description=Chess GPT: snapshot evaluation watcher for stream-large-%i
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dev/projects/gpts/chess
+ExecStart=/home/dev/projects/gpts/chess/scripts/stream-watch.sh %i
+Restart=always
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStopSec=120
+StandardOutput=append:/home/dev/projects/gpts/chess/data/logs/watch-stream-large-%i.log
+StandardError=append:/home/dev/projects/gpts/chess/data/logs/watch-stream-large-%i.log
+
+[Install]
+WantedBy=default.target

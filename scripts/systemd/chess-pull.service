@@ -1,0 +1,17 @@
+[Unit]
+Description=Chess GPT: streaming data pull (Lichess, month by month)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dev/projects/gpts/chess
+ExecStart=/home/dev/.local/bin/uv run --no-sync python -m chessgpt.data.lichess configs/data/lichess-stream.yaml
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStopSec=120
+StandardOutput=append:/home/dev/projects/gpts/chess/data/logs/lichess-stream.log
+StandardError=append:/home/dev/projects/gpts/chess/data/logs/lichess-stream.log
+
+[Install]
+WantedBy=default.target

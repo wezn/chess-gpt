@@ -1,0 +1,17 @@
+[Unit]
+Description=Chess GPT: round-robin streaming trainer (A, B, C)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dev/projects/gpts/chess
+ExecStart=/home/dev/projects/gpts/chess/scripts/stream-train.sh
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStopSec=120
+StandardOutput=append:/home/dev/projects/gpts/chess/data/logs/stream-large.log
+StandardError=append:/home/dev/projects/gpts/chess/data/logs/stream-large.log
+
+[Install]
+WantedBy=default.target
