@@ -6,6 +6,7 @@ here and in the Elo calibration.
 """
 
 import glob
+from pathlib import Path
 import random
 from collections import Counter
 from dataclasses import dataclass, field
@@ -30,6 +31,8 @@ def phase_of(ply: int) -> str:
 def val_games(dataset: str, n: int, min_plies: int = 0, seed: int = 0) -> list[dict]:
     """n held-out games (the validation split, never trained on), deterministic."""
     files = sorted(glob.glob(str(PROCESSED_DIR / dataset / "*.parquet")))
+    if files and Path(files[0]).name.startswith("chunk-"):
+        files = files[:1]  # a streaming dataset keeps growing; its first chunk is the fixed held-out pool
     rows = []
     for f in files:
         t = pq.read_table(f, columns=["game_id", "white_elo", "black_elo", "num_plies", "moves"])

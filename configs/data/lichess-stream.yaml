@@ -1,0 +1,13 @@
+# Streaming dataset: rapid and slower, all ratings, month by month (newest first), written as
+# 250k-game chunks that the tokenizer follower and the trainer consume while the pull runs.
+name: lichess-stream
+source:
+  months: ["2026-09", "2026-08", "2026-07", "2026-06"]
+chunk_games: 250000
+filters:
+  min_elo: 0
+  max_elo: null
+  speeds: [rapid, classical, correspondence]
+  terminations: [Normal, Time forfeit]
+  min_plies: 20
+  exclude_bots: true

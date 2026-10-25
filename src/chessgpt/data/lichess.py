@@ -17,7 +17,7 @@ from pathlib import Path
 import pyarrow as pa
 import zstandard
 
-from chessgpt.data.common import DatasetWriter, load_config
+from chessgpt.data.common import ChunkWriter, DatasetWriter, load_config
 from chessgpt.data.pgn import RawGame, clean_moves, iter_games, speed
 
 URL_TEMPLATE = "https://database.lichess.org/standard/lichess_db_standard_rated_{month}.pgn.zst"
@@ -114,9 +114,12 @@ def reject_reason(game: RawGame, f: dict) -> str | None:
 
 
 def build(config: dict, max_mbps: float | None = None) -> Path:
+    """Build the dataset. With `chunk_games` set it is written as chunks that can be consumed while
+    the pull is running (see ChunkWriter), and an interrupted pull resumes at the month it was on."""
     f = config["filters"]
     max_games = config.get("max_games")
-    writer = DatasetWriter(config["name"], SCHEMA)
+    chunked = config.get("chunk_games")
+    writer = ChunkWriter(config["name"], SCHEMA, rows_per_chunk=chunked) if chunked else DatasetWriter(config["name"], SCHEMA)
     stats: Counter[str] = Counter()
     start = time.monotonic()
 
@@ -124,6 +127,11 @@ def build(config: dict, max_mbps: float | None = None) -> Path:
         if max_games and stats["kept"] >= max_games:
             break
         label = source.get("month") or source.get("path")
+        if chunked and label in writer.months_done:
+            print(f"skipping {label}: already pulled", file=sys.stderr)
+            continue
+        if chunked:
+            writer.begin_month(label)
         print(f"reading {label}", file=sys.stderr)
         kept_before = stats["kept"]
         with open_source(source, max_mbps) as stream:
@@ -162,7 +170,11 @@ def build(config: dict, max_mbps: float | None = None) -> Path:
                 if stats["scanned"] % 500_000 == 0:
                     rate = stats["scanned"] / (time.monotonic() - start)
                     print(f"scanned {stats['scanned']:,}  kept {stats['kept']:,}  ({rate:,.0f} games/s)", file=sys.stderr)
+                    if chunked:
+                        writer.write_status(scanned=stats["scanned"], scan_rate=round(rate), kept_rate=round(stats["kept"] / (time.monotonic() - start)))
         stats[f"kept_{label}"] = stats["kept"] - kept_before
+        if chunked:
+            writer.end_month(label)
 
     stats["seconds"] = round(time.monotonic() - start)
     out = writer.finish({"config": config, "stats": dict(stats)})

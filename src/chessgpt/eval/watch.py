@@ -158,7 +158,7 @@ def main() -> None:
             with open(out, "a") as f:
                 f.write(json.dumps(record) + "\n")
             print(
-                f"step {record['step']:,} ({record['progress']:.0%})  ACPL {record['strength_acpl']:.1f}  "
+                f"step {record['step']:,} ({record['progress']:.0%})  ACPL {record['strength_acpl']:.1f}  ".replace(f" ({record['progress']:.0%})" if record['progress'] is not None else "", "") if record['progress'] is not None else f"step {record['step']:,}  ACPL {record['strength_acpl']:.1f}  "
                 f"blunders {record['strength_blunder_rate']:.2%}  legal {record['legal_rate']:.2%}  "
                 f"self-play illegal {record['selfplay_first_try_illegal_rate']:.2%}  [{record['eval_seconds']}s]",
                 file=sys.stderr,

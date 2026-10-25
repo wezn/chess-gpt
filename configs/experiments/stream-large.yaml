@@ -1,0 +1,23 @@
+# Three large models trained round-robin on the streaming dataset, one per tokenizer.
+# snapshot_period = steps per 2% in the single-epoch runs, so snapshots line up with them:
+#   pgn-char 29228/50, uci-move 5388/50, uci-square 10750/50.
+name: stream-large
+data: lichess-stream
+model: large
+members:
+  - {tokenizer: pgn-char,   block_size: 1024, snapshot_period: 584.56}
+  - {tokenizer: uci-move,   block_size: 192,  snapshot_period: 107.76}
+  - {tokenizer: uci-square, block_size: 384,  snapshot_period: 215.0}
+train:
+  batch_tokens: 65536
+  warmup_steps: 200
+  min_lr_ratio: 0.1
+  cooldown_snapshots: 2      # after STOP, decay the LR over this many snapshot periods, then finish
+  block_chunks: 4            # 4 x 250k games shuffled together
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  grad_clip: 1.0
+  log_every: 50
+  eval_games: 2000
+  compile: true
+  seed: 1337
