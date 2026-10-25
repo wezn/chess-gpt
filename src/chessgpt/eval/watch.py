@@ -150,7 +150,8 @@ def main() -> None:
             done = {r["step"] for r in records}
             pending = [p for p in sorted((run_dir / "snapshots").glob("step-*.pt"), key=snapshot_step) if snapshot_step(p) not in done]
             if not pending:
-                if args.once or any((r.get("progress") or 0) >= 1 for r in records):
+                finished = not cfg.get("streaming") and any((r.get("progress") or 0) >= 1 for r in records)
+                if args.once or finished:  # streaming runs never finish on their own; stop them with Ctrl+C
                     break
                 time.sleep(args.poll)
                 continue
