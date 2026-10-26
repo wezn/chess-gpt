@@ -175,6 +175,7 @@ class Member:
     metrics: object = None
     flops_per_token: float = 0.0
     tag: str = ""
+    games_per_s: float = 0.0  # over the last log window, while this model holds the GPU
 
     def next_snapshot_step(self) -> int:
         return round((self.snapshots + 1) * self.period)
@@ -213,7 +214,7 @@ def write_group_status(group_dir: Path, members: list[Member], now: Member | Non
         "round": round_no,
         "updated": time.time(),
         "runs": {m.tokenizer: {"run_dir": str(m.run_dir), "step": m.step, "games_seen": m.games_seen, "snapshots": m.snapshots, "done": m.done,
-                               "cooldown": m.cooldown_start is not None, "waiting_for_data": m.data.starved if m.data else False} for m in members},
+                               "cooldown": m.cooldown_start is not None, "waiting_for_data": m.data.starved if m.data else False, "games_per_s": m.games_per_s} for m in members},
     }
     tmp = group_dir / "status.json.tmp"
     tmp.write_text(json.dumps(st, indent=1))
@@ -290,7 +291,7 @@ def train_group(cfg: dict, group_dir: Path, members: list[Member], resume: bool)
                 continue
             target = m.next_snapshot_step()
             write_group_status(group_dir, members, m, round_no)
-            window_start, window_tokens, window_targets, exhausted = time.monotonic(), 0, 0, False
+            window_start, window_tokens, window_targets, window_games, exhausted = time.monotonic(), 0, 0, 0, False
             while m.step < target:
                 item = m.data.next_batch()
                 if item is None:
@@ -309,15 +310,17 @@ def train_group(cfg: dict, group_dir: Path, members: list[Member], resume: bool)
                 m.games_seen += games
                 window_tokens += batch.x.size
                 window_targets += int((batch.y != IGNORE).sum())
+                window_games += games
                 if m.step % t["log_every"] == 0:
                     dt = time.monotonic() - window_start
                     rec = {"type": "train", "step": m.step, "loss": (loss / n).item(), "lr": lr, "tokens_per_s": window_tokens / dt,
                            "padding": 1 - window_targets / window_tokens, "tflops": m.flops_per_token * window_tokens / dt / 1e12,
-                           "games_seen": m.games_seen, "block": block_no, "elapsed_s": round(time.monotonic() - group_start)}
+                           "games_seen": m.games_seen, "games_per_s": window_games / dt, "block": block_no, "elapsed_s": round(time.monotonic() - group_start)}
                     m.log(rec)
+                    m.games_per_s = rec["games_per_s"]
                     write_group_status(group_dir, members, m, round_no)
                     print(f"{m.tag} step {m.step:,}  loss {rec['loss']:.4f}  lr {lr:.2e}  {rec['tokens_per_s'] / 1e3:,.0f}k tok/s  block {block_no}  games {m.games_seen:,}", file=sys.stderr)
-                    window_start, window_tokens, window_targets = time.monotonic(), 0, 0
+                    window_start, window_tokens, window_targets, window_games = time.monotonic(), 0, 0, 0
             if m.step > (round(m.snapshots * m.period) if m.snapshots else 0):
                 snapshot(m)
             if exhausted:

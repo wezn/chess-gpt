@@ -222,7 +222,8 @@ def pipeline_panel(groups: dict[str, dict]) -> Panel | None:
         if all(r.get("done") for r in g["runs"].values()):
             t.append("all models done")
         else:
-            t.append(f"round {g['round']} · now {g['now'] or '—'}" + ("  (waiting for data)" if g["now"] and g["runs"][g["now"]].get("waiting_for_data") else ""))
+            now = g["runs"].get(g["now"], {}) if g["now"] else {}
+            t.append(f"round {g['round']} · now {g['now'] or '—'}" + (f" · {now['games_per_s']:,.0f} games/s" if now.get("games_per_s") else "") + ("  (waiting for data)" if now.get("waiting_for_data") else ""))
             if (RUNS_DIR / name / "STOP").exists():
                 t.append("  STOP requested, cooling down", style="magenta")
         parts.append(t)
@@ -312,12 +313,24 @@ class RunInfo:
         return Text("idle", style="dim")
 
     def rate(self) -> str:
-        """Steps per minute over the last 20 log records, when the run is moving."""
+        """Steps per minute and games per second over the current burst of log records, when the run is moving."""
         if len(self.train) < 2 or time.time() - self.mtime > 300:
             return ""
-        recent = self.train[-min(len(self.train), 20):]
+        if self.me and self.group.get("now") and self.group["runs"][self.group["now"]] is not self.me:
+            return ""  # queued behind another model: its last records are stale
+        recent = [self.train[-1]]
+        for rec in reversed(self.train[:-1]):  # walk back while the records are consecutive (no queued gap)
+            if recent[-1]["elapsed_s"] - rec["elapsed_s"] > 120 or len(recent) >= 20:
+                break
+            recent.append(rec)
+        recent.reverse()
         dt = recent[-1]["elapsed_s"] - recent[0]["elapsed_s"]
-        return f"{(recent[-1]['step'] - recent[0]['step']) / dt * 60:.0f} st/min" if dt > 0 else ""
+        out = f"{(recent[-1]['step'] - recent[0]['step']) / dt * 60:.0f} st/min" if dt > 0 and len(recent) > 1 else ""
+        if "games_per_s" in self.train[-1]:
+            out += f" · {self.train[-1]['games_per_s']:,.0f} games/s"
+        elif dt > 0 and len(recent) > 1 and "games_seen" in recent[-1]:
+            out += f" · {(recent[-1]['games_seen'] - recent[0]['games_seen']) / dt:,.0f} games/s"
+        return out
 
     def eval_now(self) -> Text:
         st = self.status_file
