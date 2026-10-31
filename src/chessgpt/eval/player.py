@@ -18,7 +18,7 @@ import torch
 
 from chessgpt.data.pretokenize import TOKENIZED_DIR
 from chessgpt.model import GPT, GPTConfig
-from chessgpt.tokenizers import BOS, PAD, PROMOTIONS, SPECIALS, Tokenizer, get_tokenizer
+from chessgpt.tokenizers import BOS, EOS, PAD, PROMOTIONS, SPECIALS, Tokenizer, get_tokenizer
 
 MAX_NEW_TOKENS = {"pgn-char": 9, "uci-square": 3, "uci-move": 1}  # longest SAN is 7 chars + space
 
@@ -54,6 +54,12 @@ def prompt_ids(tokenizer: Tokenizer, board: chess.Board) -> list[int]:
 def parse_partial(tokenizer: Tokenizer, board: chess.Board, generated: list[int]) -> tuple[str, chess.Move | None]:
     """Decide whether the tokens generated so far form a move: ("more" | "move" | "illegal", move)."""
     if generated[-1] < len(SPECIALS):
+        # pgn-char writes a game's last move straight before <eos> ("Qg7#<eos>"): the move still counts
+        if tokenizer.name == "pgn-char" and generated[-1] == EOS and len(generated) > 1:
+            try:
+                return "move", board.parse_san("".join(tokenizer.itos[i] for i in generated[:-1]))
+            except ValueError:
+                pass
         return "illegal", None
     tokens = [tokenizer.itos[i] for i in generated]
     if tokenizer.name == "uci-move":
