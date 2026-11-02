@@ -2,6 +2,7 @@
 /data/
 /runs/
 /wandb/
+/models/
 
 # Python
 __pycache__/

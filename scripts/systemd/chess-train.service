@@ -4,14 +4,15 @@ After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/dev/projects/gpts/chess
-ExecStart=/home/dev/projects/gpts/chess/scripts/stream-train.sh
+WorkingDirectory=@ROOT@
+Environment=UV=@UV@
+ExecStart=@ROOT@/scripts/stream-train.sh
 Restart=on-failure
 RestartSec=30
 KillSignal=SIGINT
 TimeoutStopSec=120
-StandardOutput=append:/home/dev/projects/gpts/chess/data/logs/stream-large.log
-StandardError=append:/home/dev/projects/gpts/chess/data/logs/stream-large.log
+StandardOutput=append:@ROOT@/data/logs/stream-large.log
+StandardError=append:@ROOT@/data/logs/stream-large.log
 
 [Install]
 WantedBy=default.target

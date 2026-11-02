@@ -91,13 +91,24 @@ def parse_partial(tokenizer: Tokenizer, board: chess.Board, generated: list[int]
 
 class ModelPlayer:
     def __init__(self, checkpoint: str | Path, device: str = "cuda"):
-        ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
-        cfg = ckpt["config"]
-        meta = json.loads((TOKENIZED_DIR / cfg["data"] / "meta.json").read_text())
-        self.tokenizer = get_tokenizer(meta["tokenizer"])
+        """`checkpoint` is a training checkpoint (.pt) or an exported model directory
+        (config.json + model.safetensors, as published on the Hugging Face Hub)."""
+        checkpoint = Path(checkpoint)
+        if checkpoint.is_dir():
+            from safetensors.torch import load_file
+
+            cfg = json.loads((checkpoint / "config.json").read_text())
+            ckpt = {"model": load_file(checkpoint / "model.safetensors", device=device), "step": cfg.get("step")}
+        else:
+            ckpt = torch.load(checkpoint, map_location=device, weights_only=False)
+            cfg = ckpt["config"]
+        if "tokenizer" not in cfg:  # training checkpoints: tokenizer is recorded with the tokenized dataset
+            meta = json.loads((TOKENIZED_DIR / cfg["data"] / "meta.json").read_text())
+            cfg = {**cfg, "tokenizer": meta["tokenizer"], "vocab_size": meta["vocab_size"]}
+        self.tokenizer = get_tokenizer(cfg["tokenizer"])
         self.block_size = cfg["block_size"]
         model_cfg = {k: v for k, v in cfg["model"].items() if k != "name"}
-        self.model = GPT(GPTConfig(vocab_size=meta["vocab_size"], block_size=self.block_size, **model_cfg))
+        self.model = GPT(GPTConfig(vocab_size=cfg["vocab_size"], block_size=self.block_size, **model_cfg))
         self.model.load_state_dict(ckpt["model"])
         self.model.to(device).eval()
         self.device = device
