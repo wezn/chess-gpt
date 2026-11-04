@@ -19,6 +19,9 @@ import pyarrow.parquet as pq
 from chessgpt.data.common import PROCESSED_DIR
 from chessgpt.data.pretokenize import is_val
 from chessgpt.eval.player import ModelPlayer
+from chessgpt.tokenizers import EOS, SPECIALS
+
+EOS_TEXT = SPECIALS[EOS]  # a first output of just "<eos>"
 
 OPENING_PLIES = 6
 PHASES = [("opening", 0, 20), ("middlegame", 20, 60), ("endgame", 60, 10_000)]  # by ply
@@ -67,7 +70,8 @@ def legality_on_games(player: ModelPlayer, games: list[dict], progress=None) -> 
         if choice.status == "context":
             continue
         phase = phase_of(len(board.move_stack))
-        legal = choice.status == "legal"
+        # writing <eos> alone ends the game (a resignation in the data): not a move, so not an illegal one
+        legal = choice.status == "legal" or choice.first_output == EOS_TEXT
         stats["positions"] += 1
         stats[f"{phase}_positions"] += 1
         stats["legal"] += legal
@@ -126,7 +130,7 @@ def self_play(player: ModelPlayer, openings: list[list[str]], max_plies: int = 2
                     game.end = "context"
                     continue
             board.push(ranked[0][0] if fallback else choice.move)
-            game.illegal_attempts.append(choice.illegal_attempts)
+            game.illegal_attempts.append(0 if choice.first_output == EOS_TEXT else choice.illegal_attempts)
             game.fallback.append(fallback)
             if board.is_checkmate():
                 game.end = "checkmate"
